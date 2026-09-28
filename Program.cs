@@ -1,6 +1,8 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Realtime;
+using PortfolioManager.Api.Tsetmc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +25,18 @@ builder.Services.AddSingleton<RealtimeBroadcastInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((sp, options) => options
     .UseSqlite(builder.Configuration.GetConnectionString("Default"))
     .AddInterceptors(sp.GetRequiredService<RealtimeBroadcastInterceptor>()));
+
+// Background import of stock/ETF prices from tsetmc.com.
+builder.Services.Configure<TsetmcOptions>(builder.Configuration.GetSection(TsetmcOptions.SectionName));
+builder.Services.AddHttpClient<TsetmcClient>(http =>
+    {
+        http.BaseAddress = new Uri("https://cdn.tsetmc.com/");
+        http.Timeout = TimeSpan.FromSeconds(60);
+        // TSETMC answers 403 to requests without a browser-like User-Agent.
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PortfolioManager/1.0");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+builder.Services.AddHostedService<TsetmcPriceSyncService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -47,7 +61,7 @@ app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSecond
 app.UseAuthorization();
 app.MapControllers();
 
-// Clients connect here to receive "asset.created" and "price.created" messages.
+// Clients connect here to receive "asset.created", "price.created" and "price.updated" messages.
 app.Map("/ws", async (HttpContext context, WebSocketHub hub) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)

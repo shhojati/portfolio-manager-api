@@ -37,7 +37,7 @@ public class PricesController(AppDbContext db) : ControllerBase
         if (!await db.Assets.AnyAsync(a => a.Id == request.AssetId))
             return BadRequest($"Asset {request.AssetId} does not exist.");
 
-        var price = new Price { AssetId = request.AssetId, Value = request.Value, Date = request.Date };
+        var price = new Price { AssetId = request.AssetId, Value = request.Value, Date = request.Date, Nav = request.Nav };
         db.Prices.Add(price);
         await db.SaveChangesAsync();
 
@@ -57,6 +57,7 @@ public class PricesController(AppDbContext db) : ControllerBase
         price.AssetId = request.AssetId;
         price.Value = request.Value;
         price.Date = request.Date;
+        price.Nav = request.Nav;
         await db.SaveChangesAsync();
 
         return NoContent();
@@ -75,5 +76,5 @@ public class PricesController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
-    private static PriceDto ToDto(Price p) => new(p.Id, p.AssetId, p.Value, p.Date);
+    private static PriceDto ToDto(Price p) => new(p.Id, p.AssetId, p.Value, p.Date, p.Nav);
 }

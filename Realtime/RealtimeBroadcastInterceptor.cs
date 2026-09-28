@@ -7,13 +7,13 @@ using PortfolioManager.Api.Models;
 namespace PortfolioManager.Api.Realtime;
 
 /// <summary>
-/// Pushes newly inserted assets and prices to WebSocket clients, but only after
+/// Pushes newly inserted assets and prices (and updated prices) to WebSocket clients, but only after
 /// SaveChanges has succeeded (so generated IDs are populated and nothing is sent for a rollback).
 /// </summary>
 public sealed class RealtimeBroadcastInterceptor(WebSocketHub hub) : SaveChangesInterceptor
 {
-    // Entities added in the save currently in progress, per DbContext instance.
-    private readonly ConditionalWeakTable<DbContext, List<object>> _pending = new();
+    // Entities added or modified in the save currently in progress, per DbContext instance.
+    private readonly ConditionalWeakTable<DbContext, List<(object Entity, EntityState State)>> _pending = new();
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
@@ -54,22 +54,23 @@ public sealed class RealtimeBroadcastInterceptor(WebSocketHub hub) : SaveChanges
         if (context is null)
             return;
 
-        var added = context.ChangeTracker.Entries()
-            .Where(e => e.State == EntityState.Added && e.Entity is Asset or Price)
-            .Select(e => e.Entity)
+        var changed = context.ChangeTracker.Entries()
+            .Where(e => (e.State == EntityState.Added && e.Entity is Asset or Price)
+                || (e.State == EntityState.Modified && e.Entity is Price))
+            .Select(e => (e.Entity, e.State))
             .ToList();
 
-        if (added.Count > 0)
-            _pending.AddOrUpdate(context, added);
+        if (changed.Count > 0)
+            _pending.AddOrUpdate(context, changed);
     }
 
     private void Publish(DbContext? context)
     {
-        if (context is null || !_pending.TryGetValue(context, out var added))
+        if (context is null || !_pending.TryGetValue(context, out var changed))
             return;
 
         _pending.Remove(context);
-        foreach (var entity in added)
+        foreach (var (entity, state) in changed)
         {
             switch (entity)
             {
@@ -77,7 +78,8 @@ public sealed class RealtimeBroadcastInterceptor(WebSocketHub hub) : SaveChanges
                     hub.Publish("asset.created", new AssetDto(a.Id, a.Symbol, a.Identifier, a.Name, a.Type, a.CreatedAt));
                     break;
                 case Price p:
-                    hub.Publish("price.created", new PriceDto(p.Id, p.AssetId, p.Value, p.Date));
+                    hub.Publish(state == EntityState.Added ? "price.created" : "price.updated",
+                        new PriceDto(p.Id, p.AssetId, p.Value, p.Date, p.Nav));
                     break;
             }
         }

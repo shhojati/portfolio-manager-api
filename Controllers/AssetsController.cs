@@ -60,7 +60,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
         return await db.Prices
             .Where(p => p.AssetId == id)
             .OrderByDescending(p => p.Date)
-            .Select(p => new PriceDto(p.Id, p.AssetId, p.Value, p.Date))
+            .Select(p => new PriceDto(p.Id, p.AssetId, p.Value, p.Date, p.Nav))
             .ToListAsync();
     }
 
