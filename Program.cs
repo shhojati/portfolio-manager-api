@@ -49,7 +49,8 @@ using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
 }
 
-if (app.Environment.IsDevelopment())
+// Swagger is always on in Development; elsewhere it follows "Swagger:Enabled".
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();

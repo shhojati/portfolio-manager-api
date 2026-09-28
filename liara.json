@@ -1,0 +1,11 @@
+{
+  "app": "portfo-manager-api",
+  "platform": "docker",
+  "port": 8080,
+  "disks": [
+    {
+      "name": "data",
+      "mountTo": "/app/data"
+    }
+  ]
+}
