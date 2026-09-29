@@ -24,6 +24,29 @@ public class PricesController(AppDbContext db) : ControllerBase
             .ToListAsync();
     }
 
+    /// <summary>Get the latest price of each asset in the given list of asset identifiers.</summary>
+    /// <remarks>Identifiers with no matching asset or no prices are omitted from the result.</remarks>
+    [HttpGet("latest")]
+    public async Task<ActionResult<List<AssetPriceDto>>> GetLatestByIdentifiers([FromQuery] List<string> identifiers)
+    {
+        var ids = identifiers.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest("At least one identifier is required.");
+
+        var prices = await db.Prices
+            .Where(p => ids.Contains(p.Asset!.Identifier)
+                && p.Date == db.Prices.Where(q => q.AssetId == p.AssetId).Max(q => q.Date))
+            .Select(p => new AssetPriceDto(p.Asset!.Identifier, p.AssetId, p.Id, p.Value, p.Date, p.Nav))
+            .ToListAsync();
+
+        // Several prices can share the latest date; keep the most recently inserted one per asset.
+        return prices
+            .GroupBy(p => p.AssetId)
+            .Select(g => g.MaxBy(p => p.PriceId)!)
+            .OrderBy(p => ids.IndexOf(p.Identifier))
+            .ToList();
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<PriceDto>> GetById(int id)
     {
