@@ -19,6 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Compile here: Liara's builders cannot reach nuget.org, so dotnet restore times out there.
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish app
+        run: dotnet publish PortfolioManager.Api.csproj -c Release -r linux-x64 --no-self-contained -o publish -p:UseAppHost=false
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -26,10 +34,10 @@ jobs:
       - name: Install Liara CLI
         run: npm install -g @liara/cli@9
 
-      # Uploads the source and Liara builds the image from the Dockerfile on its own builders.
-      # Pulling a prebuilt image from ghcr.io does not work: ghcr.io is unreachable from Iran and the release times out.
+      # Uploads the source plus publish/, and Liara builds Dockerfile.liara, which only copies publish/.
+      # A prebuilt image from ghcr.io cannot be used: ghcr.io is unreachable from Iran.
       # app, port and disks come from liara.json.
       - name: Deploy to Liara
         env:
           LIARA_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
-        run: liara deploy --api-token "$LIARA_TOKEN" --no-app-logs
+        run: liara deploy --api-token "$LIARA_TOKEN" --dockerfile Dockerfile.liara --no-app-logs

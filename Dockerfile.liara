@@ -1,0 +1,20 @@
+# Runtime-only image for Liara. The app is compiled beforehand (dotnet publish -o publish) by the
+# GitHub Actions workflow, because Liara's builders cannot reach nuget.org and dotnet restore times out.
+# For a full build from source (e.g. locally) use the regular Dockerfile.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    ASPNETCORE_HTTP_PORTS=8080 \
+    TZ=Asia/Tehran \
+    ConnectionStrings__Default="Data Source=/app/data/portfolio.db"
+
+# SQLite lives on the Liara disk mounted at /app/data (see liara.json).
+# The mounted disk is root-owned, so the container runs as root to be able to write to it.
+USER root
+RUN mkdir -p /app/data
+
+COPY publish/ .
+
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "PortfolioManager.Api.dll"]
