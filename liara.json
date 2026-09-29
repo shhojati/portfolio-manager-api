@@ -1,5 +1,5 @@
 {
-  "app": "portfo-manager-api",
+  "app": "portfolio-manager",
   "platform": "docker",
   "port": 8080,
   "disks": [
