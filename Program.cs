@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Realtime;
+using PortfolioManager.Api.Tgju;
 using PortfolioManager.Api.Tsetmc;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,6 +49,17 @@ builder.Services.AddHttpClient<BitpinClient>(http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<BitpinPriceSyncService>();
+
+// Background import of world currency, gold, coin and metal prices (in Rial) from tgju.org.
+builder.Services.Configure<TgjuOptions>(builder.Configuration.GetSection(TgjuOptions.SectionName));
+builder.Services.AddHttpClient<TgjuClient>(http =>
+    {
+        // No base address: TgjuClient picks one of tgju's mirrors and times out each attempt itself.
+        http.Timeout = TimeSpan.FromMinutes(2);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PortfolioManager/1.0");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+builder.Services.AddHostedService<TgjuPriceSyncService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
