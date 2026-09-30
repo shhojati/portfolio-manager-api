@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tsetmc;
@@ -37,6 +38,16 @@ builder.Services.AddHttpClient<TsetmcClient>(http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<TsetmcPriceSyncService>();
+
+// Background import of crypto prices (in Toman, stored as Rial) from bitpin.ir.
+builder.Services.Configure<BitpinOptions>(builder.Configuration.GetSection(BitpinOptions.SectionName));
+builder.Services.AddHttpClient<BitpinClient>(http =>
+    {
+        http.BaseAddress = new Uri("https://api.bitpin.ir/");
+        http.Timeout = TimeSpan.FromSeconds(60);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+builder.Services.AddHostedService<BitpinPriceSyncService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
