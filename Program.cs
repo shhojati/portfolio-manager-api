@@ -80,6 +80,15 @@ if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger
 }
 
 app.UseHttpsRedirection();
+
+// The backoffice UI (wwwroot) is served at the site root. "no-cache" makes browsers revalidate,
+// so a deploy is picked up immediately; unchanged files still come back as 304s.
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache"
+});
+
 app.UseCors();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 app.UseAuthorization();

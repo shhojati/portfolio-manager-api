@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio Backoffice</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    try { const t = localStorage.getItem('pm.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+  </script>
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#/assets">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8"/><path d="M7 21l6-6 4 4 8-9"/></svg>
+        </span>
+        <span class="brand-text">
+          <strong>Portfolio Manager</strong>
+          <small>Backoffice</small>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="Main">
+        <a href="#/assets" data-nav="assets">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          Assets
+        </a>
+        <a href="#/activity" data-nav="activity">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+          Live activity
+          <span class="nav-badge" id="activity-badge" hidden></span>
+        </a>
+        <a href="swagger" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg>
+          API docs
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="conn" id="conn" data-state="connecting" title="Real-time connection">
+          <span class="conn-dot" aria-hidden="true"></span>
+          <span class="conn-label">Connecting…</span>
+        </div>
+        <div class="toggles">
+          <div class="segmented" role="group" aria-label="Price unit">
+            <button type="button" data-unit="IRR">Rial</button>
+            <button type="button" data-unit="IRT">Toman</button>
+          </div>
+          <button type="button" class="icon-btn" id="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main" id="view" tabindex="-1"></main>
+  </div>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>
