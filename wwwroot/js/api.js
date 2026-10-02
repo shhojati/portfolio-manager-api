@@ -21,6 +21,11 @@ async function request(method, path, body) {
     throw new ApiError(0, 'Could not reach the server.');
   }
 
+  // The session expired or was ended (e.g. password changed elsewhere): sign in again, then come back.
+  if (res.status === 401 && !path.startsWith('api/auth/')) {
+    location.replace(`login.html?next=${encodeURIComponent(location.hash)}`);
+    throw new ApiError(401, 'Your session has ended. Please sign in again.');
+  }
   if (!res.ok) throw new ApiError(res.status, await errorMessage(res));
   if (res.status === 204) return null;
 
@@ -60,4 +65,17 @@ export const prices = {
   create: price => request('POST', 'api/prices', price),
   update: (id, price) => request('PUT', `api/prices/${id}`, price),
   remove: id => request('DELETE', `api/prices/${id}`),
+};
+
+export const auth = {
+  me: () => request('GET', 'api/auth/me'),
+  logout: () => request('POST', 'api/auth/logout'),
+  changePassword: (currentPassword, newPassword) => request('POST', 'api/auth/password', { currentPassword, newPassword }),
+};
+
+export const users = {
+  list: () => request('GET', 'api/users'),
+  create: user => request('POST', 'api/users', user),
+  setPassword: (id, password) => request('PUT', `api/users/${id}/password`, { password }),
+  remove: id => request('DELETE', `api/users/${id}`),
 };

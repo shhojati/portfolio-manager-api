@@ -1,15 +1,24 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Dtos;
 using PortfolioManager.Api.Models;
+using PortfolioManager.Api.RateLimiting;
 
 namespace PortfolioManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = Roles.Readers)]
+[EnableRateLimiting(RateLimitPolicies.Api)]
 public class PricesController(AppDbContext db) : ControllerBase
 {
+    // Caps the work one (possibly anonymous) request can cause.
+    private const int MaxIdentifiers = 100;
+
     /// <summary>Get all prices, optionally filtered by asset.</summary>
     [HttpGet]
     public async Task<ActionResult<List<PriceDto>>> GetAll([FromQuery] int? assetId)
@@ -25,13 +34,19 @@ public class PricesController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>Get the latest price of each asset in the given list of asset identifiers.</summary>
-    /// <remarks>Identifiers with no matching asset or no prices are omitted from the result.</remarks>
+    /// <remarks>
+    /// Identifiers with no matching asset or no prices are omitted from the result.
+    /// Public: no sign-in needed, rate limited per IP; at most 100 identifiers per request.
+    /// </remarks>
     [HttpGet("latest")]
+    [AllowAnonymous]
     public async Task<ActionResult<List<AssetPriceDto>>> GetLatestByIdentifiers([FromQuery] List<string> identifiers)
     {
         var ids = identifiers.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct().ToList();
         if (ids.Count == 0)
             return BadRequest("At least one identifier is required.");
+        if (ids.Count > MaxIdentifiers)
+            return BadRequest($"At most {MaxIdentifiers} identifiers per request.");
 
         var prices = await db.Prices
             .Where(p => ids.Contains(p.Asset!.Identifier)
@@ -55,6 +70,7 @@ public class PricesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<PriceDto>> Create(PriceRequest request)
     {
         if (!await db.Assets.AnyAsync(a => a.Id == request.AssetId))
@@ -68,6 +84,7 @@ public class PricesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> Update(int id, PriceRequest request)
     {
         var price = await db.Prices.FindAsync(id);
@@ -87,6 +104,7 @@ public class PricesController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> Delete(int id)
     {
         var price = await db.Prices.FindAsync(id);

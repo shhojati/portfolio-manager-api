@@ -7,9 +7,13 @@ WORKDIR /app
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_HTTP_PORTS=8080 \
     TZ=Asia/Tehran \
-    ConnectionStrings__Default="Data Source=/app/data/portfolio.db"
+    ConnectionStrings__Default="Data Source=/app/data/portfolio.db" \
+    DataProtection__KeysPath=/app/data/keys \
+    ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 
-# SQLite lives on the Liara disk mounted at /app/data (see liara.json).
+# SQLite and the data protection keys (which encrypt sessions and API tokens) live on the Liara disk
+# mounted at /app/data (see liara.json), so they survive deploys. Forwarded headers are trusted because
+# the app is only reachable through Liara's proxy; the rate limiter needs the real client IP.
 # The mounted disk is root-owned, so the container runs as root to be able to write to it.
 USER root
 RUN mkdir -p /app/data

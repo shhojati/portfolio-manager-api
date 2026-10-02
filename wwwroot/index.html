@@ -36,6 +36,10 @@
           Live activity
           <span class="nav-badge" id="activity-badge" hidden></span>
         </a>
+        <a href="#/users" data-nav="users">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>
+          Users
+        </a>
         <a href="swagger" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5"/></svg>
           API docs
@@ -55,6 +59,12 @@
           <button type="button" class="icon-btn" id="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
           </button>
+        </div>
+        <div class="user-box" id="user-box" hidden>
+          <span class="avatar" id="user-avatar" aria-hidden="true"></span>
+          <span class="user-name" id="user-name"></span>
+          <button type="button" class="icon-btn" id="change-password" aria-label="Change password" title="Change password"></button>
+          <button type="button" class="icon-btn" id="sign-out" aria-label="Sign out" title="Sign out"></button>
         </div>
       </div>
     </aside>

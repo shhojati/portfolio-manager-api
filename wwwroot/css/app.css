@@ -542,6 +542,60 @@ dialog form { margin: 0; }
 .toast.error { border-left-color: var(--critical); }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
 
+/* ---------- Login ---------- */
+
+.login-body { display: grid; place-items: center; min-height: 100vh; padding: 24px 16px; }
+.login { width: min(380px, 100%); display: flex; flex-direction: column; gap: 20px; }
+.login-brand { justify-content: center; }
+.login-card { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
+.login-card h1 { margin: 0; font-size: 20px; }
+.login-card .muted { margin: -8px 0 4px; }
+.login-submit { height: 38px; margin-top: 4px; }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+.field select { appearance: auto; }
+
+/* ---------- Signed-in user ---------- */
+
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 0;
+  border-top: 1px solid var(--border);
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.user-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: 13px; }
+
+.code {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font: 12.5px/1.6 var(--mono);
+  white-space: pre;
+}
+.help { display: flex; flex-direction: column; gap: 10px; color: var(--text-2); }
+.help p { margin: 0; }
+.help code { padding: 1px 5px; border-radius: 4px; background: var(--surface-2); font: 12.5px var(--mono); }
+.input-row { display: flex; gap: 8px; }
+.input-row input { flex: 1; min-width: 0; }
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 860px) {
@@ -563,6 +617,8 @@ dialog form { margin: 0; }
   .nav a { padding: 6px 10px; white-space: nowrap; }
   .sidebar-footer { margin: 0 0 0 auto; flex-direction: row; align-items: center; }
   .conn-label { display: none; }
+  .user-box { padding: 0; border: 0; }
+  .user-name { display: none; }
   .main { padding: 20px 16px 40px; }
   .field-row { grid-template-columns: 1fr; }
   .feed li { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 9px 16px; }

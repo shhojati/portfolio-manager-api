@@ -1,17 +1,21 @@
 // Entry point: hash router, shell controls (connection status, unit, theme) and live connection.
 
-import { icon } from './dom.js';
+import * as api from './api.js';
+import { formDialog, h, icon, toast } from './dom.js';
 import { getUnit, onUnitChange, setUnit } from './format.js';
 import { realtime } from './realtime.js';
+import { loadSession, signOut } from './session.js';
 import { loadAssets } from './store.js';
 import { renderActivity } from './views/activity.js';
 import { renderAsset } from './views/asset.js';
 import { renderAssets } from './views/assets.js';
+import { passwordField, renderUsers } from './views/users.js';
 
 const routes = [
   { pattern: /^\/assets\/(?<id>\d+)$/, nav: 'assets', render: renderAsset, title: 'Asset' },
   { pattern: /^\/assets$/, nav: 'assets', render: renderAssets, title: 'Assets' },
   { pattern: /^\/activity$/, nav: 'activity', render: renderActivity, title: 'Live activity' },
+  { pattern: /^\/users$/, nav: 'users', render: renderUsers, title: 'Users' },
 ];
 
 const main = document.getElementById('view');
@@ -81,7 +85,43 @@ themeBtn.addEventListener('click', () => {
 darkQuery.addEventListener('change', syncThemeButton);
 syncThemeButton();
 
+// ---------- signed-in user ----------
+
+function showUser(user) {
+  document.getElementById('user-avatar').textContent = user.username.slice(0, 2);
+  document.getElementById('user-name').textContent = user.username;
+  document.getElementById('user-box').hidden = false;
+}
+
+const passwordBtn = document.getElementById('change-password');
+passwordBtn.append(icon('key'));
+passwordBtn.addEventListener('click', async () => {
+  const val = (form, name) => form.elements.namedItem(name).value;
+  const done = await formDialog({
+    title: 'Change your password',
+    submitLabel: 'Change password',
+    fields: [
+      passwordField({ label: 'Current password', name: 'current', autocomplete: 'current-password', generate: false }),
+      passwordField({ label: 'New password', name: 'next' }),
+      h('p', null, 'Your other sessions will be signed out.'),
+    ],
+    onSubmit: async form => { await api.auth.changePassword(val(form, 'current'), val(form, 'next')); return true; },
+  });
+  if (done) toast('Password changed');
+});
+
+const signOutBtn = document.getElementById('sign-out');
+signOutBtn.append(icon('logout'));
+signOutBtn.addEventListener('click', signOut);
+
 // ---------- start ----------
 
-realtime.connect();
-route();
+// The server only serves this page to signed-in admins, but the session can lapse in between.
+loadSession().then(
+  user => {
+    if (user.role !== 'Admin') return signOut();
+    showUser(user);
+    realtime.connect();
+    route();
+  },
+  () => location.replace(`login.html?next=${encodeURIComponent(location.hash)}`));

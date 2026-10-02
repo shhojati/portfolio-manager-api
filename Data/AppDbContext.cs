@@ -8,6 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<Price> Prices => Set<Price>();
+    public DbSet<User> Users => Set<User>();
 
     // SQLite has no timezone-aware type, so store every DateTime as UTC and
     // mark it as UTC when reading it back.
@@ -40,6 +41,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(p => p.AssetId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(p => new { p.AssetId, p.Date });
+        });
+
+        modelBuilder.Entity<User>(e =>
+        {
+            e.Property(u => u.Username).HasMaxLength(50).IsRequired().UseCollation("NOCASE");
+            e.Property(u => u.PasswordHash).IsRequired();
+            e.Property(u => u.Role).HasMaxLength(20).IsRequired();
+            e.Property(u => u.SecurityStamp).HasMaxLength(64).IsRequired();
+            e.HasIndex(u => u.Username).IsUnique();
         });
     }
 }

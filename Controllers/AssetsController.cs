@@ -1,13 +1,19 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Dtos;
 using PortfolioManager.Api.Models;
+using PortfolioManager.Api.RateLimiting;
 
 namespace PortfolioManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = Roles.Readers)]
+[EnableRateLimiting(RateLimitPolicies.Api)]
 public class AssetsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
@@ -19,7 +25,9 @@ public class AssetsController(AppDbContext db) : ControllerBase
             .ToListAsync();
     }
 
+    /// <summary>Search assets by symbol, identifier or name. Public: no sign-in needed, rate limited per IP.</summary>
     [HttpGet("search")]
+    [AllowAnonymous]
     public async Task<ActionResult<List<AssetDto>>> Search([FromQuery] string q)
     {
         if (string.IsNullOrWhiteSpace(q))
@@ -65,6 +73,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Admin)]
     public async Task<ActionResult<AssetDto>> Create(AssetRequest request)
     {
         var symbol = request.Symbol.Trim().ToUpperInvariant();
@@ -83,6 +92,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> Update(int id, AssetRequest request)
     {
         var asset = await db.Assets.FindAsync(id);
@@ -107,6 +117,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> Delete(int id)
     {
         var asset = await db.Assets.FindAsync(id);

@@ -1,7 +1,11 @@
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
+using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Data;
+using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tgju;
 using PortfolioManager.Api.Tsetmc;
@@ -61,15 +65,34 @@ builder.Services.AddHttpClient<TgjuClient>(http =>
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<TgjuPriceSyncService>();
 
+// Admins sign in with a cookie, API clients with a bearer token; see Auth/AuthSetup.cs.
+builder.AddPortfolioAuth();
+builder.AddPortfolioRateLimiting();
+
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    // Lets Swagger UI call the API with a token from POST /api/auth/token (a signed-in admin's cookie also works).
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        Description = "Access token from POST /api/auth/token.",
+    });
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
+    });
+});
 
 var app = builder.Build();
 
 // Apply pending migrations (creates portfolio.db on first run)
+// and create the users configured under "Auth:Users" that don't exist yet.
 using (var scope = app.Services.CreateScope())
 {
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+    await UserSeeder.SeedAsync(scope.ServiceProvider);
 }
 
 // Swagger is always on in Development; elsewhere it follows "Swagger:Enabled".
@@ -80,18 +103,32 @@ if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
+app.UseAuthentication();
+
+// The backoffice page itself is only served to signed-in admins; everyone else gets the login page.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.Value is "/" or "/index.html" && !context.User.IsInRole(Roles.Admin))
+    {
+        context.Response.Redirect("login.html");
+        return;
+    }
+    await next();
+});
 
 // The backoffice UI (wwwroot) is served at the site root. "no-cache" makes browsers revalidate,
 // so a deploy is picked up immediately; unchanged files still come back as 304s.
+// Static files come before UseAuthorization so the login page and its scripts stay public.
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache"
 });
 
-app.UseCors();
-app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
+app.UseRateLimiter();
 app.UseAuthorization();
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 app.MapControllers();
 
 // Clients connect here to receive "asset.created", "price.created" and "price.updated" messages.
@@ -105,6 +142,6 @@ app.Map("/ws", async (HttpContext context, WebSocketHub hub) =>
 
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     await hub.HandleConnectionAsync(socket, context.RequestAborted);
-});
+}).RequireAuthorization(new AuthorizeAttribute { Roles = Roles.Readers });
 
 app.Run();
