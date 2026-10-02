@@ -1,0 +1,28 @@
+# Runs the API on a VPS (or locally) with Docker.
+#   cp .env.example .env    # then fill in the passwords
+#   chmod 600 .env
+#   docker compose up -d --build
+#
+# Put a reverse proxy with HTTPS (Caddy, nginx) in front: the session cookie is only sent over HTTPS,
+# and the app trusts the proxy's X-Forwarded-For for per-IP rate limits, so the port is bound to
+# localhost and must not be exposed to the internet directly.
+
+name: portfolio-manager
+
+services:
+  api:
+    # The regular Dockerfile compiles from source, which needs access to nuget.org. Where that is blocked,
+    # publish first (dotnet publish -c Release -o publish -p:UseAppHost=false) and use Dockerfile.liara.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Builds are tagged with this name; an image built elsewhere and copied over with
+    # "docker save | docker load" under the same name runs with "docker compose up -d --no-build".
+    image: portfolio-manager:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
+    volumes:
+      # SQLite database and the data protection keys (sessions, API tokens). Back this folder up.
+      - ./data:/app/data

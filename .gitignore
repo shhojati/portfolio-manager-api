@@ -485,3 +485,6 @@ $RECYCLE.BIN/
 *.db
 *.db-shm
 *.db-wal
+
+# Docker Compose data volume (SQLite database, data protection keys)
+/data/

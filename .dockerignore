@@ -10,3 +10,8 @@
 *.db-wal
 liara.json
 .github/
+.env
+.env.*
+!.env.example
+data/
+.claude/
