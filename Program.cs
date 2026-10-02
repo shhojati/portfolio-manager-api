@@ -5,6 +5,7 @@ using Microsoft.OpenApi;
 using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Data;
+using PortfolioManager.Api.Fipiran;
 using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tgju;
@@ -64,6 +65,17 @@ builder.Services.AddHttpClient<TgjuClient>(http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<TgjuPriceSyncService>();
+
+// Background import of issuance/redemption mutual fund NAVs (in Rial) from fipiran.ir.
+builder.Services.Configure<FipiranOptions>(builder.Configuration.GetSection(FipiranOptions.SectionName));
+builder.Services.AddHttpClient<FipiranClient>(http =>
+    {
+        http.BaseAddress = new Uri("https://www.fipiran.ir/");
+        http.Timeout = TimeSpan.FromSeconds(60);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PortfolioManager/1.0");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+builder.Services.AddHostedService<FipiranPriceSyncService>();
 
 // Admins sign in with a cookie, API clients with a bearer token; see Auth/AuthSetup.cs.
 builder.AddPortfolioAuth();

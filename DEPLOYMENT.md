@@ -63,7 +63,7 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
                 ├─ REST API          /api/...
                 ├─ Backoffice UI     /, /login.html (from wwwroot)
                 ├─ WebSocket         /ws
-                └─ Background jobs   TSETMC, Bitpin, tgju price sync (outbound HTTPS)
+                └─ Background jobs   TSETMC, Bitpin, tgju, FIPIRAN price sync (outbound HTTPS)
                         │
                         ▼
               /app/data  ◀── bind mount ──▶  ./data on the host
@@ -117,6 +117,7 @@ Keep it in backups together with the database.
 | TSETMC (stocks, ETFs, ETF NAVs) | `cdn.tsetmc.com` | Hourly, Sat–Wed 08:45–13:00 Tehran; NAVs until 18:30 |
 | Bitpin (crypto) | `api.bitpin.ir` | Every 15 min, 24/7 |
 | tgju (currencies, gold, coins, metals) | `call1`–`call4.tgju.org` | Every 15 min |
+| FIPIRAN (issuance/redemption fund NAVs) | `www.fipiran.ir` | Hourly, 24/7 |
 
 The VPS must be able to reach these hosts. Some Iranian services block or throttle foreign IPs; check
 with `curl` before migrating (see [section 5.6](#56-check-outbound-access-to-the-price-sources)).
@@ -208,12 +209,13 @@ users already exist and these variables are not needed at all.
 | `Cors__AllowedOrigins__0` | *(none)* | Browser apps on **other origins** allowed to call the API, e.g. `https://portfolio.example.com`. Not needed for server-to-server calls or the built-in backoffice |
 | `Swagger__Enabled` | `true` | Serve API docs at `/swagger` (docs only; calls still need auth) |
 | `AllowedHosts` | `*` | Restrict accepted `Host` headers, e.g. `api.example.com` |
-| `Tsetmc__Enabled` / `Bitpin__Enabled` / `Tgju__Enabled` | `true` | Turn a price sync job off |
-| `Tsetmc__Interval`, `Bitpin__Interval`, `Tgju__Interval` | `01:00:00`, `00:15:00`, `00:15:00` | Sync frequency |
+| `Tsetmc__Enabled` / `Bitpin__Enabled` / `Tgju__Enabled` / `Fipiran__Enabled` | `true` | Turn a price sync job off |
+| `Tsetmc__Interval`, `Bitpin__Interval`, `Tgju__Interval`, `Fipiran__Interval` | `01:00:00`, `00:15:00`, `00:15:00`, `01:00:00` | Sync frequency |
 | `Tsetmc__MarketOpen` / `Tsetmc__MarketClose` | `08:45` / `13:00` | TSETMC active hours (Tehran) |
 | `Tsetmc__SyncEtfNav`, `Tsetmc__NavInterval`, `Tsetmc__NavClose`, `Tsetmc__NavConcurrency` | `true`, `01:00:00`, `18:30`, `4` | ETF NAV sync |
 | `Tsetmc__RunOnStartup` | `true` | Run one TSETMC sync at startup even outside market hours |
 | `Tgju__MaxQuoteAge` | `7.00:00:00` | Ignore tgju quotes older than this |
+| `Fipiran__MaxNavAge` | `7.00:00:00` | Ignore funds whose latest NAV is older than this |
 | `Logging__LogLevel__Default` | `Information` | Log verbosity (`Debug`, `Information`, `Warning`, `Error`) |
 
 After editing `.env`, apply it with `docker compose up -d` (this recreates the container; a plain
@@ -367,6 +369,7 @@ sudo systemctl restart docker
 curl -sS -o /dev/null -w "tsetmc %{http_code}\n" -A "Mozilla/5.0" https://cdn.tsetmc.com/api/MarketData/GetMarketOverview/1
 curl -sS -o /dev/null -w "bitpin %{http_code}\n" https://api.bitpin.ir/
 curl -sS -o /dev/null -w "tgju   %{http_code}\n" https://call1.tgju.org/ajax.json
+curl -sS -o /dev/null -w "fipiran %{http_code}\n" -A "Mozilla/5.0" https://www.fipiran.ir/services/fund/fundtype
 ```
 
 Any `200`–`4xx` answer means the host is reachable; timeouts or connection errors mean that price
@@ -414,7 +417,7 @@ Expected log lines on first start (fresh database):
 - EF Core applying migrations (creates `data/portfolio.db`)
 - `Created Admin user admin` and `Created ApiClient user api-client`
 - `Now listening on: http://[::]:8080`
-- Price sync messages from TSETMC/Bitpin/tgju a little later
+- Price sync messages from TSETMC/Bitpin/tgju/FIPIRAN a little later
 
 Warning to act on: `No admin user exists, so nobody can sign in to the backoffice` → the `Auth__Users__*`
 variables are missing or invalid. Fix `.env`, then `docker compose up -d`.
