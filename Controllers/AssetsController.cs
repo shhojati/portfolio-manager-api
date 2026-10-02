@@ -16,6 +16,9 @@ namespace PortfolioManager.Api.Controllers;
 [EnableRateLimiting(RateLimitPolicies.Api)]
 public class AssetsController(AppDbContext db) : ControllerBase
 {
+    // Caps the work one (possibly anonymous) request can cause.
+    private const int MaxIdentifiers = 100;
+
     [HttpGet]
     public async Task<ActionResult<List<AssetDto>>> GetAll()
     {
@@ -52,6 +55,29 @@ public class AssetsController(AppDbContext db) : ControllerBase
             .ToListAsync();
     }
 
+    /// <summary>Get the assets with the given identifiers, matched case-insensitively.</summary>
+    /// <remarks>
+    /// Identifiers with no matching asset are omitted from the result.
+    /// Public: no sign-in needed, rate limited per IP; at most 100 identifiers per request.
+    /// </remarks>
+    [HttpGet("by-identifiers")]
+    [AllowAnonymous]
+    public async Task<ActionResult<List<AssetDto>>> GetByIdentifiers([FromQuery] List<string> identifiers)
+    {
+        var ids = identifiers.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim().ToUpperInvariant()).Distinct().ToList();
+        if (ids.Count == 0)
+            return BadRequest("At least one identifier is required.");
+        if (ids.Count > MaxIdentifiers)
+            return BadRequest($"At most {MaxIdentifiers} identifiers per request.");
+
+        var assets = await db.Assets
+            .Where(a => ids.Contains(a.Identifier.ToUpper()))
+            .Select(a => ToDto(a))
+            .ToListAsync();
+
+        return assets.OrderBy(a => ids.IndexOf(a.Identifier.ToUpperInvariant())).ToList();
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<AssetDto>> GetById(int id)
     {
@@ -59,7 +85,9 @@ public class AssetsController(AppDbContext db) : ControllerBase
         return asset is null ? NotFound() : ToDto(asset);
     }
 
+    /// <summary>Price history of an asset, newest first. Public: no sign-in needed, rate limited per IP.</summary>
     [HttpGet("{id:int}/prices")]
+    [AllowAnonymous]
     public async Task<ActionResult<List<PriceDto>>> GetPrices(int id)
     {
         if (!await db.Assets.AnyAsync(a => a.Id == id))

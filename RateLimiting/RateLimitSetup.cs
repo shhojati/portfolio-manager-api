@@ -30,7 +30,8 @@ public sealed class RateLimitOptions
     public WindowLimit Admin { get; set; } = new() { PermitLimit = 600 };
 
     /// <summary>
-    /// Callers without a token, per IP address: the public endpoints (asset search, latest prices)
+    /// Callers without a token, per IP address: the public endpoints (asset search and lookup by
+    /// identifier, an asset's price history, latest prices)
     /// and any rejected request to a protected one share this budget.
     /// </summary>
     public WindowLimit Anonymous { get; set; } = new() { PermitLimit = 30 };
