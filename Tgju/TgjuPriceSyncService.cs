@@ -82,10 +82,12 @@ public sealed class TgjuPriceSyncService(
             quotes.Add((instrument, value / instrument.Units, DateTime.SpecifyKind(quote.TehranTime.Date, DateTimeKind.Utc)));
         }
 
+        // Assets are matched by their identifier (the Latin code), which never changes, so symbols and names
+        // can be changed in TgjuInstruments and existing assets follow on the next run, keeping their prices.
         var types = TgjuInstruments.ByKey.Values.Select(i => i.Type).ToHashSet();
         var allAssets = await db.Assets.ToListAsync(ct);
         var imported = allAssets.Where(a => types.Contains(a.Type))
-            .GroupBy(a => (a.Type, a.Symbol))
+            .GroupBy(a => (a.Type, a.Identifier))
             .ToDictionary(g => g.Key, g => g.First());
         var symbols = allAssets.Select(a => a.Symbol).ToHashSet();
         var identifiers = allAssets.Select(a => a.Identifier).ToHashSet();
@@ -96,23 +98,28 @@ public sealed class TgjuPriceSyncService(
             .GroupBy(p => (p.AssetId, p.Date))
             .ToDictionary(g => g.Key, g => g.First());
 
-        int createdAssets = 0, createdPrices = 0, skipped = 0;
+        int createdAssets = 0, renamedAssets = 0, createdPrices = 0, skipped = 0;
         foreach (var (instrument, value, date) in quotes)
         {
             if (!imported.TryGetValue((instrument.Type, instrument.Code), out var asset))
             {
-                if (!symbols.Add(instrument.Code) || !identifiers.Add(instrument.Code))
+                if (symbols.Contains(instrument.Symbol) || !identifiers.Add(instrument.Code))
                 {
-                    // An asset of another type (e.g. a crypto coin) already uses this symbol or identifier.
+                    // Another asset (e.g. a TSETMC fund or a crypto coin) already uses this symbol or identifier.
                     skipped++;
-                    logger.LogDebug("Skipping {Code}: symbol or identifier is already taken", instrument.Code);
+                    logger.LogWarning("Skipping {Code}: symbol {Symbol} or identifier {Code} is already taken", instrument.Code, instrument.Symbol, instrument.Code);
                     continue;
                 }
 
-                asset = new Asset { Symbol = instrument.Code, Identifier = instrument.Code, Name = instrument.Name, Type = instrument.Type };
+                symbols.Add(instrument.Symbol);
+                asset = new Asset { Symbol = instrument.Symbol, Identifier = instrument.Code, Name = instrument.Name, Type = instrument.Type };
                 db.Assets.Add(asset);
                 imported[(instrument.Type, instrument.Code)] = asset;
                 createdAssets++;
+            }
+            else if (asset.Symbol != instrument.Symbol || asset.Name != instrument.Name)
+            {
+                renamedAssets += Rename(asset, instrument, symbols) ? 1 : 0;
             }
 
             // One row per asset per day, updated in place so it ends the day as that day's closing price.
@@ -131,7 +138,31 @@ public sealed class TgjuPriceSyncService(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "tgju price sync finished in {Elapsed}: {Instruments} instruments received, {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Stale} stale, {Skipped} skipped (symbol taken)",
-            TimeProvider.System.GetElapsedTime(start), quotes.Count, createdAssets, createdPrices, updatedPrices, stale, skipped);
+            "tgju price sync finished in {Elapsed}: {Instruments} instruments received, {CreatedAssets} assets added, {RenamedAssets} renamed, {CreatedPrices} prices added, {UpdatedPrices} updated, {Stale} stale, {Skipped} skipped (symbol taken)",
+            TimeProvider.System.GetElapsedTime(start), quotes.Count, createdAssets, renamedAssets, createdPrices, updatedPrices, stale, skipped);
+    }
+
+    // Brings an existing asset's symbol and name in line with TgjuInstruments. The symbol is only changed
+    // when no other asset uses it, since symbols are unique. Returns whether anything changed.
+    private bool Rename(Asset asset, TgjuInstrument instrument, HashSet<string> symbols)
+    {
+        var renamed = asset.Name != instrument.Name;
+        asset.Name = instrument.Name;
+
+        if (asset.Symbol != instrument.Symbol)
+        {
+            if (symbols.Add(instrument.Symbol))
+            {
+                symbols.Remove(asset.Symbol);
+                asset.Symbol = instrument.Symbol;
+                renamed = true;
+            }
+            else
+            {
+                logger.LogWarning("Not changing the symbol of {Code} to {Symbol}: the symbol is already taken", instrument.Code, instrument.Symbol);
+            }
+        }
+
+        return renamed;
     }
 }

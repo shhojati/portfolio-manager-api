@@ -1,10 +1,12 @@
 namespace PortfolioManager.Api.Tgju;
 
 /// <summary>
-/// An instrument in tgju's feed and the <see cref="Models.Asset"/> it is imported as. The price tgju quotes is for
-/// <see cref="Units"/> units, in Rial, or in US dollars when <see cref="InUsd"/> is set (world metal prices).
+/// An instrument in tgju's feed and the <see cref="Models.Asset"/> it is imported as. <see cref="Code"/> is a stable Latin
+/// code (ISO 4217 for currencies) stored as the asset's identifier; <see cref="Symbol"/> is the short Persian name shown
+/// to users (at most 20 characters) and <see cref="Name"/> the full one. The price tgju quotes is for <see cref="Units"/>
+/// units, in Rial, or in US dollars when <see cref="InUsd"/> is set (world metal prices).
 /// </summary>
-public sealed record TgjuInstrument(string Code, string Name, string Type, int Units = 1, bool InUsd = false);
+public sealed record TgjuInstrument(string Code, string Symbol, string Name, string Type, int Units = 1, bool InUsd = false);
 
 /// <summary>
 /// Everything imported from tgju, keyed by tgju's name for it: world currencies, Iranian gold and coins, and metals.
@@ -21,46 +23,48 @@ public static class TgjuInstruments
     /// <summary>tgju's key for the free-market US dollar, used to convert <see cref="TgjuInstrument.InUsd"/> prices to Rial.</summary>
     public const string UsdKey = "price_dollar_rl";
 
-    private static TgjuInstrument Currency(string code, string name, int units = 1) => new(code, name, CurrencyType, units);
+    // A currency's symbol is its Persian name, unless that is too long for a symbol.
+    private static TgjuInstrument Currency(string code, string name, int units = 1, string? symbol = null) =>
+        new(code, symbol ?? name, name, CurrencyType, units);
 
     public static readonly IReadOnlyDictionary<string, TgjuInstrument> ByKey = new Dictionary<string, TgjuInstrument>(StringComparer.Ordinal)
     {
         // Gold, in Rial per gram (per mesghal, 4.608 g of 17 karat, for melted gold)
-        ["geram18"] = new("GOLD-18", "طلای ۱۸ عیار ۷۵۰ (گرم)", GoldType),
-        ["gold_740k"] = new("GOLD-18-740", "طلای ۱۸ عیار ۷۴۰ (گرم)", GoldType),
-        ["geram24"] = new("GOLD-24", "طلای ۲۴ عیار (گرم)", GoldType),
-        ["mesghal"] = new("GOLD-MESGHAL", "مثقال طلا", GoldType),
-        ["gold_futures"] = new("GOLD-MELTED", "طلای آبشده نقدی (مثقال)", GoldType),
-        ["gold_world_futures"] = new("GOLD-MELTED-SUB1KG", "طلای آبشده کمتر از کیلو (مثقال)", GoldType),
-        ["gold_melted_wholesale"] = new("GOLD-MELTED-BULK", "طلای آبشده بنکداری (مثقال)", GoldType),
+        ["geram18"] = new("GOLD-18", "طلای ۱۸ عیار", "طلای ۱۸ عیار ۷۵۰ (گرم)", GoldType),
+        ["gold_740k"] = new("GOLD-18-740", "طلای ۱۸ عیار ۷۴۰", "طلای ۱۸ عیار ۷۴۰ (گرم)", GoldType),
+        ["geram24"] = new("GOLD-24", "طلای ۲۴ عیار", "طلای ۲۴ عیار (گرم)", GoldType),
+        ["mesghal"] = new("GOLD-MESGHAL", "مثقال طلا", "مثقال طلا", GoldType),
+        ["gold_futures"] = new("GOLD-MELTED", "آبشده نقدی", "طلای آبشده نقدی (مثقال)", GoldType),
+        ["gold_world_futures"] = new("GOLD-MELTED-SUB1KG", "آبشده کمتر از کیلو", "طلای آبشده کمتر از کیلو (مثقال)", GoldType),
+        ["gold_melted_wholesale"] = new("GOLD-MELTED-BULK", "آبشده بنکداری", "طلای آبشده بنکداری (مثقال)", GoldType),
 
         // Gold coins, in Rial per coin
-        ["sekee"] = new("COIN-EMAMI", "سکه امامی", CoinType),
-        ["sekeb"] = new("COIN-BAHAR", "سکه بهار آزادی", CoinType),
-        ["nim"] = new("COIN-NIM", "نیم سکه", CoinType),
-        ["rob"] = new("COIN-ROB", "ربع سکه", CoinType),
-        ["gerami"] = new("COIN-GERAMI", "سکه گرمی", CoinType),
-        ["sekee_down"] = new("COIN-EMAMI-OLD", "تمام سکه (قبل ۸۶)", CoinType),
-        ["nim_down"] = new("COIN-NIM-OLD", "نیم سکه (قبل ۸۶)", CoinType),
-        ["rob_down"] = new("COIN-ROB-OLD", "ربع سکه (قبل ۸۶)", CoinType),
+        ["sekee"] = new("COIN-EMAMI", "سکه امامی", "سکه امامی", CoinType),
+        ["sekeb"] = new("COIN-BAHAR", "سکه بهار آزادی", "سکه بهار آزادی", CoinType),
+        ["nim"] = new("COIN-NIM", "نیم سکه", "نیم سکه", CoinType),
+        ["rob"] = new("COIN-ROB", "ربع سکه", "ربع سکه", CoinType),
+        ["gerami"] = new("COIN-GERAMI", "سکه گرمی", "سکه گرمی", CoinType),
+        ["sekee_down"] = new("COIN-EMAMI-OLD", "تمام سکه قبل ۸۶", "تمام سکه (قبل ۸۶)", CoinType),
+        ["nim_down"] = new("COIN-NIM-OLD", "نیم سکه قبل ۸۶", "نیم سکه (قبل ۸۶)", CoinType),
+        ["rob_down"] = new("COIN-ROB-OLD", "ربع سکه قبل ۸۶", "ربع سکه (قبل ۸۶)", CoinType),
 
         // Silver on the Iranian market, in Rial per gram
-        ["silver_999"] = new("SILVER-999", "نقره ۹۹۹ (گرم)", MetalType),
-        ["silver_925"] = new("SILVER-925", "نقره ۹۲۵ (گرم)", MetalType),
+        ["silver_999"] = new("SILVER-999", "نقره ۹۹۹", "نقره ۹۹۹ (گرم)", MetalType),
+        ["silver_925"] = new("SILVER-925", "نقره ۹۲۵", "نقره ۹۲۵ (گرم)", MetalType),
 
         // World precious metals, in dollars per troy ounce
-        ["ons"] = new("XAU", "انس طلا", MetalType, InUsd: true),
-        ["silver"] = new("XAG", "انس نقره", MetalType, InUsd: true),
-        ["platinum"] = new("XPT", "انس پلاتین", MetalType, InUsd: true),
-        ["palladium"] = new("XPD", "انس پالادیوم", MetalType, InUsd: true),
+        ["ons"] = new("XAU", "انس طلا", "انس طلا", MetalType, InUsd: true),
+        ["silver"] = new("XAG", "انس نقره", "انس نقره", MetalType, InUsd: true),
+        ["platinum"] = new("XPT", "انس پلاتین", "انس پلاتین", MetalType, InUsd: true),
+        ["palladium"] = new("XPD", "انس پالادیوم", "انس پالادیوم", MetalType, InUsd: true),
 
         // World base metals, in dollars per tonne
-        ["base_global_copper"] = new("COPPER", "مس (تن)", MetalType, InUsd: true),
-        ["aluminium"] = new("ALUMINIUM", "آلومینیوم (تن)", MetalType, InUsd: true),
-        ["base_global_zinc"] = new("ZINC", "روی (تن)", MetalType, InUsd: true),
-        ["base_global_nickel"] = new("NICKEL", "نیکل (تن)", MetalType, InUsd: true),
-        ["base_global_lead"] = new("LEAD", "سرب (تن)", MetalType, InUsd: true),
-        ["base_global_tin"] = new("TIN", "قلع (تن)", MetalType, InUsd: true),
+        ["base_global_copper"] = new("COPPER", "مس جهانی", "مس (تن)", MetalType, InUsd: true),
+        ["aluminium"] = new("ALUMINIUM", "آلومینیوم جهانی", "آلومینیوم (تن)", MetalType, InUsd: true),
+        ["base_global_zinc"] = new("ZINC", "روی جهانی", "روی (تن)", MetalType, InUsd: true),
+        ["base_global_nickel"] = new("NICKEL", "نیکل جهانی", "نیکل (تن)", MetalType, InUsd: true),
+        ["base_global_lead"] = new("LEAD", "سرب جهانی", "سرب (تن)", MetalType, InUsd: true),
+        ["base_global_tin"] = new("TIN", "قلع جهانی", "قلع (تن)", MetalType, InUsd: true),
 
         // World currencies, in Rial per unit. A few keys still use the ISO code from before a redenomination but
         // carry the current currency's price, so they are mapped to the current code (price_mro is the new ouguiya, MRU).
@@ -166,7 +170,7 @@ public static class TgjuInstruments
         ["price_cup"] = Currency("CUP", "پزو کوبا"),
         ["price_htg"] = Currency("HTG", "گورد هائیتی"),
         ["price_jmd"] = Currency("JMD", "دلار جامائیکا"),
-        ["price_ttd"] = Currency("TTD", "دلار ترینیداد و توباگو"),
+        ["price_ttd"] = Currency("TTD", "دلار ترینیداد و توباگو", symbol: "دلار ترینیداد"),
         ["price_bbd"] = Currency("BBD", "دلار باربادوس"),
         ["price_bsd"] = Currency("BSD", "دلار باهاما"),
         ["price_bzd"] = Currency("BZD", "دلار بلیز"),
@@ -207,13 +211,13 @@ public static class TgjuInstruments
         ["price_kmf"] = Currency("KMF", "فرانک کومور"),
         ["price_mga"] = Currency("MGA", "آریاری ماداگاسکار"),
         ["price_mur"] = Currency("MUR", "روپیه موریس"),
-        ["price_scr"] = Currency("SCR", "روپیه سیشل"),
+        ["price_scr"] = Currency("SCR-CURRENCY", "روپیه سیشل"), // "SCR" is already the identifier of the Scroll crypto coin
         ["price_cve"] = Currency("CVE", "اسکودو کیپ ورد"),
         ["price_gmd"] = Currency("GMD", "دالاسی گامبیا"),
         ["price_gnf"] = Currency("GNF", "فرانک گینه"),
         ["price_lrd"] = Currency("LRD", "دلار لیبریا"),
         ["price_mro"] = Currency("MRU", "اوگیه موریتانی"),
-        ["price_std"] = Currency("STN", "دوبرا سائوتومه و پرنسیپ"),
+        ["price_std"] = Currency("STN", "دوبرا سائوتومه و پرنسیپ", symbol: "دوبرای سائوتومه"),
         ["price_shp"] = Currency("SHP", "پوند سنت هلن"),
     };
 }
