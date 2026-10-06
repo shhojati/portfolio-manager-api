@@ -158,5 +158,5 @@ public class AssetsController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
-    private static AssetDto ToDto(Asset a) => new(a.Id, a.Symbol, a.Identifier, a.Name, a.Type, a.CreatedAt);
+    private static AssetDto ToDto(Asset a) => new(a.Id, a.Symbol, a.Identifier, a.Name, a.Type, a.CreatedAt, a.Unit);
 }

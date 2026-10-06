@@ -75,7 +75,7 @@ public sealed class RealtimeBroadcastInterceptor(WebSocketHub hub) : SaveChanges
             switch (entity)
             {
                 case Asset a:
-                    hub.Publish("asset.created", new AssetDto(a.Id, a.Symbol, a.Identifier, a.Name, a.Type, a.CreatedAt));
+                    hub.Publish("asset.created", new AssetDto(a.Id, a.Symbol, a.Identifier, a.Name, a.Type, a.CreatedAt, a.Unit));
                     break;
                 case Price p:
                     hub.Publish(state == EntityState.Added ? "price.created" : "price.updated",

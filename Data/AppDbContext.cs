@@ -30,6 +30,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(a => a.Name).HasMaxLength(100).IsRequired();
             e.Property(a => a.Type).HasMaxLength(50);
             e.Property(a => a.TsetmcInsCode).HasMaxLength(30);
+            e.Property(a => a.Unit).HasMaxLength(20);
             e.HasIndex(a => a.Symbol).IsUnique();
             e.HasIndex(a => a.Identifier).IsUnique();
         });

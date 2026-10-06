@@ -68,7 +68,7 @@ public sealed class TgjuPriceSyncService(
         // Each price is dated by the day tgju last updated it, not the day we fetched it, so a quote tgju
         // hasn't refreshed (weekends, thinly traded currencies) doesn't pass for today's price.
         int stale = 0;
-        var quotes = new List<(TgjuInstrument Instrument, decimal Value, DateTime Date)>();
+        var quotes = new List<(TgjuInstrument Instrument, decimal Value, decimal? Intrinsic, DateTime Date)>();
         foreach (var (key, quote) in feed)
         {
             if (!TgjuInstruments.ByKey.TryGetValue(key, out var instrument) || quote.Price <= 0) continue;
@@ -79,8 +79,17 @@ public sealed class TgjuPriceSyncService(
             }
 
             var value = instrument.InUsd ? Math.Round(quote.Price * usdRate!.Value) : quote.Price;
-            quotes.Add((instrument, value / instrument.Units, DateTime.SpecifyKind(quote.TehranTime.Date, DateTimeKind.Utc)));
+            quotes.Add((instrument, value / instrument.Units, Intrinsic(instrument), DateTime.SpecifyKind(quote.TehranTime.Date, DateTimeKind.Utc)));
         }
+
+        // Left empty when tgju's reference price is missing or stale, so the app shows no bubble rather than a wrong one.
+        decimal? Intrinsic(TgjuInstrument instrument) =>
+            instrument.Intrinsic is { } intrinsic
+            && feed.TryGetValue(intrinsic.Key, out var reference)
+            && reference.Price > 0
+            && IsFresh(reference)
+                ? Math.Round(reference.Price * intrinsic.Factor)
+                : null;
 
         // Assets are matched by their identifier (the Latin code), which never changes, so symbols and names
         // can be changed in TgjuInstruments and existing assets follow on the next run, keeping their prices.
@@ -99,7 +108,7 @@ public sealed class TgjuPriceSyncService(
             .ToDictionary(g => g.Key, g => g.First());
 
         int createdAssets = 0, renamedAssets = 0, createdPrices = 0, skipped = 0;
-        foreach (var (instrument, value, date) in quotes)
+        foreach (var (instrument, value, intrinsic, date) in quotes)
         {
             if (!imported.TryGetValue((instrument.Type, instrument.Code), out var asset))
             {
@@ -112,12 +121,12 @@ public sealed class TgjuPriceSyncService(
                 }
 
                 symbols.Add(instrument.Symbol);
-                asset = new Asset { Symbol = instrument.Symbol, Identifier = instrument.Code, Name = instrument.Name, Type = instrument.Type };
+                asset = new Asset { Symbol = instrument.Symbol, Identifier = instrument.Code, Name = instrument.Name, Type = instrument.Type, Unit = instrument.Unit };
                 db.Assets.Add(asset);
                 imported[(instrument.Type, instrument.Code)] = asset;
                 createdAssets++;
             }
-            else if (asset.Symbol != instrument.Symbol || asset.Name != instrument.Name)
+            else if (asset.Symbol != instrument.Symbol || asset.Name != instrument.Name || asset.Unit != instrument.Unit)
             {
                 renamedAssets += Rename(asset, instrument, symbols) ? 1 : 0;
             }
@@ -126,10 +135,11 @@ public sealed class TgjuPriceSyncService(
             if (asset.Id != 0 && dayPrices.TryGetValue((asset.Id, date), out var price))
             {
                 price.Value = value;
+                price.Nav = intrinsic;
             }
             else
             {
-                db.Prices.Add(new Price { Asset = asset, Value = value, Date = date });
+                db.Prices.Add(new Price { Asset = asset, Value = value, Nav = intrinsic, Date = date });
                 createdPrices++;
             }
         }
@@ -142,12 +152,13 @@ public sealed class TgjuPriceSyncService(
             TimeProvider.System.GetElapsedTime(start), quotes.Count, createdAssets, renamedAssets, createdPrices, updatedPrices, stale, skipped);
     }
 
-    // Brings an existing asset's symbol and name in line with TgjuInstruments. The symbol is only changed
+    // Brings an existing asset's symbol, name and unit in line with TgjuInstruments. The symbol is only changed
     // when no other asset uses it, since symbols are unique. Returns whether anything changed.
     private bool Rename(Asset asset, TgjuInstrument instrument, HashSet<string> symbols)
     {
-        var renamed = asset.Name != instrument.Name;
+        var renamed = asset.Name != instrument.Name || asset.Unit != instrument.Unit;
         asset.Name = instrument.Name;
+        asset.Unit = instrument.Unit;
 
         if (asset.Symbol != instrument.Symbol)
         {

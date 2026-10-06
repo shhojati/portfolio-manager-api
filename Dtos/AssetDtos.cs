@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PortfolioManager.Api.Dtos;
 
-public record AssetDto(int Id, string Symbol, string Identifier, string Name, string Type, DateTime CreatedAt);
+public record AssetDto(int Id, string Symbol, string Identifier, string Name, string Type, DateTime CreatedAt, string? Unit);
 
 public record AssetRequest(
     [Required, MaxLength(20)] string Symbol,

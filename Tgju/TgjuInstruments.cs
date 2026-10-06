@@ -4,9 +4,26 @@ namespace PortfolioManager.Api.Tgju;
 /// An instrument in tgju's feed and the <see cref="Models.Asset"/> it is imported as. <see cref="Code"/> is a stable Latin
 /// code (ISO 4217 for currencies) stored as the asset's identifier; <see cref="Symbol"/> is the short Persian name shown
 /// to users (at most 20 characters) and <see cref="Name"/> the full one. The price tgju quotes is for <see cref="Units"/>
-/// units, in Rial, or in US dollars when <see cref="InUsd"/> is set (world metal prices).
+/// units, in Rial, or in US dollars when <see cref="InUsd"/> is set (world metal prices). <see cref="Unit"/> names what one
+/// stored price is for («گرم», «مثقال», «عدد»...); null leaves it to the app's default for the type.
+/// <see cref="Intrinsic"/>, when set, is what the instrument's gold is worth at the world price, stored as each price's
+/// <see cref="Models.Price.Nav"/> so the app can show the bubble.
 /// </summary>
-public sealed record TgjuInstrument(string Code, string Symbol, string Name, string Type, int Units = 1, bool InUsd = false);
+public sealed record TgjuInstrument(
+    string Code,
+    string Symbol,
+    string Name,
+    string Type,
+    int Units = 1,
+    bool InUsd = false,
+    string? Unit = null,
+    TgjuIntrinsic? Intrinsic = null);
+
+/// <summary>
+/// An instrument's intrinsic value: <see cref="Factor"/> times the price of another tgju instrument, <see cref="Key"/>,
+/// that tgju derives from the world gold price and the free-market dollar.
+/// </summary>
+public sealed record TgjuIntrinsic(string Key, decimal Factor = 1);
 
 /// <summary>
 /// Everything imported from tgju, keyed by tgju's name for it: world currencies, Iranian gold and coins, and metals.
@@ -27,44 +44,57 @@ public static class TgjuInstruments
     private static TgjuInstrument Currency(string code, string name, int units = 1, string? symbol = null) =>
         new(code, symbol ?? name, name, CurrencyType, units);
 
+    private const string Gram = "گرم";
+    private const string Mesghal = "مثقال";
+    private const string Coin = "عدد";
+
+    // tgju's «مثقال / بدون حباب»: a mesghal of 17 karat gold at the world gold price and the free-market dollar. The
+    // mesghal and melted gold prices are quoted per mesghal of the same gold, so it is their intrinsic value as is.
+    private static readonly TgjuIntrinsic MesghalAtWorldPrice = new("gold_17");
+
+    // tgju's «ارزش واقعی سکه»: the gold in a full coin at the world price. A half coin has half its gold and a quarter
+    // coin a quarter; Bahar Azadi and pre-1386 coins weigh the same as the Emami of their size.
+    private static TgjuIntrinsic CoinGold(decimal share) => new("sekee_real", share);
+
     public static readonly IReadOnlyDictionary<string, TgjuInstrument> ByKey = new Dictionary<string, TgjuInstrument>(StringComparer.Ordinal)
     {
-        // Gold, in Rial per gram (per mesghal, 4.608 g of 17 karat, for melted gold)
-        ["geram18"] = new("GOLD-18", "طلای ۱۸ عیار", "طلای ۱۸ عیار ۷۵۰ (گرم)", GoldType),
-        ["gold_740k"] = new("GOLD-18-740", "طلای ۱۸ عیار ۷۴۰", "طلای ۱۸ عیار ۷۴۰ (گرم)", GoldType),
-        ["geram24"] = new("GOLD-24", "طلای ۲۴ عیار", "طلای ۲۴ عیار (گرم)", GoldType),
-        ["mesghal"] = new("GOLD-MESGHAL", "مثقال طلا", "مثقال طلا", GoldType),
-        ["gold_futures"] = new("GOLD-MELTED", "آبشده نقدی", "طلای آبشده نقدی (مثقال)", GoldType),
-        ["gold_world_futures"] = new("GOLD-MELTED-SUB1KG", "آبشده کمتر از کیلو", "طلای آبشده کمتر از کیلو (مثقال)", GoldType),
-        ["gold_melted_wholesale"] = new("GOLD-MELTED-BULK", "آبشده بنکداری", "طلای آبشده بنکداری (مثقال)", GoldType),
+        // Gold, in Rial per gram, or per mesghal (4.608 g of 17 karat) for «مظنه» and melted gold
+        ["geram18"] = new("GOLD-18", "طلای ۱۸ عیار", "طلای ۱۸ عیار ۷۵۰ (گرم)", GoldType, Unit: Gram),
+        ["gold_740k"] = new("GOLD-18-740", "طلای ۱۸ عیار ۷۴۰", "طلای ۱۸ عیار ۷۴۰ (گرم)", GoldType, Unit: Gram),
+        ["geram24"] = new("GOLD-24", "طلای ۲۴ عیار", "طلای ۲۴ عیار (گرم)", GoldType, Unit: Gram),
+        // The market calls a mesghal's price «مظنه»; it's in the name so searching for it finds this.
+        ["mesghal"] = new("GOLD-MESGHAL", "مثقال طلا", "مثقال طلا (مظنه)", GoldType, Unit: Mesghal, Intrinsic: MesghalAtWorldPrice),
+        ["gold_futures"] = new("GOLD-MELTED", "آبشده نقدی", "طلای آبشده نقدی (مثقال)", GoldType, Unit: Mesghal, Intrinsic: MesghalAtWorldPrice),
+        ["gold_world_futures"] = new("GOLD-MELTED-SUB1KG", "آبشده کمتر از کیلو", "طلای آبشده کمتر از کیلو (مثقال)", GoldType, Unit: Mesghal, Intrinsic: MesghalAtWorldPrice),
+        ["gold_melted_wholesale"] = new("GOLD-MELTED-BULK", "آبشده بنکداری", "طلای آبشده بنکداری (مثقال)", GoldType, Unit: Mesghal, Intrinsic: MesghalAtWorldPrice),
 
-        // Gold coins, in Rial per coin
-        ["sekee"] = new("COIN-EMAMI", "سکه امامی", "سکه امامی", CoinType),
-        ["sekeb"] = new("COIN-BAHAR", "سکه بهار آزادی", "سکه بهار آزادی", CoinType),
-        ["nim"] = new("COIN-NIM", "نیم سکه", "نیم سکه", CoinType),
-        ["rob"] = new("COIN-ROB", "ربع سکه", "ربع سکه", CoinType),
-        ["gerami"] = new("COIN-GERAMI", "سکه گرمی", "سکه گرمی", CoinType),
-        ["sekee_down"] = new("COIN-EMAMI-OLD", "تمام سکه قبل ۸۶", "تمام سکه (قبل ۸۶)", CoinType),
-        ["nim_down"] = new("COIN-NIM-OLD", "نیم سکه قبل ۸۶", "نیم سکه (قبل ۸۶)", CoinType),
-        ["rob_down"] = new("COIN-ROB-OLD", "ربع سکه قبل ۸۶", "ربع سکه (قبل ۸۶)", CoinType),
+        // Gold coins, in Rial per coin. The «گرمی» coin has no intrinsic value here: tgju has no reference for it.
+        ["sekee"] = new("COIN-EMAMI", "سکه امامی", "سکه امامی", CoinType, Unit: Coin, Intrinsic: CoinGold(1)),
+        ["sekeb"] = new("COIN-BAHAR", "سکه بهار آزادی", "سکه بهار آزادی", CoinType, Unit: Coin, Intrinsic: CoinGold(1)),
+        ["nim"] = new("COIN-NIM", "نیم سکه", "نیم سکه", CoinType, Unit: Coin, Intrinsic: CoinGold(0.5m)),
+        ["rob"] = new("COIN-ROB", "ربع سکه", "ربع سکه", CoinType, Unit: Coin, Intrinsic: CoinGold(0.25m)),
+        ["gerami"] = new("COIN-GERAMI", "سکه گرمی", "سکه گرمی", CoinType, Unit: Coin),
+        ["sekee_down"] = new("COIN-EMAMI-OLD", "تمام سکه قبل ۸۶", "تمام سکه (قبل ۸۶)", CoinType, Unit: Coin, Intrinsic: CoinGold(1)),
+        ["nim_down"] = new("COIN-NIM-OLD", "نیم سکه قبل ۸۶", "نیم سکه (قبل ۸۶)", CoinType, Unit: Coin, Intrinsic: CoinGold(0.5m)),
+        ["rob_down"] = new("COIN-ROB-OLD", "ربع سکه قبل ۸۶", "ربع سکه (قبل ۸۶)", CoinType, Unit: Coin, Intrinsic: CoinGold(0.25m)),
 
         // Silver on the Iranian market, in Rial per gram
-        ["silver_999"] = new("SILVER-999", "نقره ۹۹۹", "نقره ۹۹۹ (گرم)", MetalType),
-        ["silver_925"] = new("SILVER-925", "نقره ۹۲۵", "نقره ۹۲۵ (گرم)", MetalType),
+        ["silver_999"] = new("SILVER-999", "نقره ۹۹۹", "نقره ۹۹۹ (گرم)", MetalType, Unit: Gram),
+        ["silver_925"] = new("SILVER-925", "نقره ۹۲۵", "نقره ۹۲۵ (گرم)", MetalType, Unit: Gram),
 
         // World precious metals, in dollars per troy ounce
-        ["ons"] = new("XAU", "انس طلا", "انس طلا", MetalType, InUsd: true),
-        ["silver"] = new("XAG", "انس نقره", "انس نقره", MetalType, InUsd: true),
-        ["platinum"] = new("XPT", "انس پلاتین", "انس پلاتین", MetalType, InUsd: true),
-        ["palladium"] = new("XPD", "انس پالادیوم", "انس پالادیوم", MetalType, InUsd: true),
+        ["ons"] = new("XAU", "انس طلا", "انس طلا", MetalType, InUsd: true, Unit: "انس"),
+        ["silver"] = new("XAG", "انس نقره", "انس نقره", MetalType, InUsd: true, Unit: "انس"),
+        ["platinum"] = new("XPT", "انس پلاتین", "انس پلاتین", MetalType, InUsd: true, Unit: "انس"),
+        ["palladium"] = new("XPD", "انس پالادیوم", "انس پالادیوم", MetalType, InUsd: true, Unit: "انس"),
 
         // World base metals, in dollars per tonne
-        ["base_global_copper"] = new("COPPER", "مس جهانی", "مس (تن)", MetalType, InUsd: true),
-        ["aluminium"] = new("ALUMINIUM", "آلومینیوم جهانی", "آلومینیوم (تن)", MetalType, InUsd: true),
-        ["base_global_zinc"] = new("ZINC", "روی جهانی", "روی (تن)", MetalType, InUsd: true),
-        ["base_global_nickel"] = new("NICKEL", "نیکل جهانی", "نیکل (تن)", MetalType, InUsd: true),
-        ["base_global_lead"] = new("LEAD", "سرب جهانی", "سرب (تن)", MetalType, InUsd: true),
-        ["base_global_tin"] = new("TIN", "قلع جهانی", "قلع (تن)", MetalType, InUsd: true),
+        ["base_global_copper"] = new("COPPER", "مس جهانی", "مس (تن)", MetalType, InUsd: true, Unit: "تن"),
+        ["aluminium"] = new("ALUMINIUM", "آلومینیوم جهانی", "آلومینیوم (تن)", MetalType, InUsd: true, Unit: "تن"),
+        ["base_global_zinc"] = new("ZINC", "روی جهانی", "روی (تن)", MetalType, InUsd: true, Unit: "تن"),
+        ["base_global_nickel"] = new("NICKEL", "نیکل جهانی", "نیکل (تن)", MetalType, InUsd: true, Unit: "تن"),
+        ["base_global_lead"] = new("LEAD", "سرب جهانی", "سرب (تن)", MetalType, InUsd: true, Unit: "تن"),
+        ["base_global_tin"] = new("TIN", "قلع جهانی", "قلع (تن)", MetalType, InUsd: true, Unit: "تن"),
 
         // World currencies, in Rial per unit. A few keys still use the ISO code from before a redenomination but
         // carry the current currency's price, so they are mapped to the current code (price_mro is the new ouguiya, MRU).

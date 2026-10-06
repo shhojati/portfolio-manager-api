@@ -8,6 +8,7 @@ public class Asset
     public string Name { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty; // e.g. Stock, ETF, Fund, Crypto, Gold, Currency
     public string? TsetmcInsCode { get; set; } // TSETMC's internal instrument code, set by the price sync job
+    public string? Unit { get; set; } // what one price is for (e.g. «گرم», «مثقال», «عدد»); null when the app's default for the type fits
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<Price> Prices { get; set; } = new();
