@@ -45,3 +45,16 @@ jobs:
           timeout 300 liara logs --api-token "$LIARA_TOKEN" --app "$app" --since "$SINCE" --timestamps > app.log
           echo "Fetched $(wc -l < app.log) lines since $SINCE; showing lines matching: $FILTER"
           grep -E -A "$CONTEXT" -e "$FILTER" app.log || echo "No matching lines."
+
+      # Asks the app itself, through its public API, which of the given assets exist and what their latest prices are.
+      - name: Check assets on the app
+        env:
+          IDENTIFIERS: CD1GOB0001 CD1GOC0001 CD1SIB0001 IRK1A12605A1 IRBKSEP10581
+        run: |
+          base="https://portfolio-manager.liara.run/api/assets"
+          query=$(printf 'identifiers=%s&' $IDENTIFIERS)
+          curl -sS -m 60 -w '\n(HTTP %{http_code} in %{time_total}s)\n' "$base/by-identifiers?$query" | tee assets.json
+          for id in $(node -e "for (const a of JSON.parse(require('fs').readFileSync('assets.json','utf8').split('\n(HTTP')[0])) console.log(a.id)"); do
+            echo "Latest prices of asset $id:"
+            curl -sS -m 60 "$base/$id/prices" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.stringify(JSON.parse(s).slice(0,5))))"
+          done
