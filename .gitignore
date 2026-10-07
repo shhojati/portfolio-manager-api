@@ -486,5 +486,7 @@ $RECYCLE.BIN/
 *.db-shm
 *.db-wal
 
-# Docker Compose data volume (SQLite database, data protection keys)
-/data/
+# Docker Compose data volume: the database is covered by *.db above, so only the data protection keys are listed.
+# Not "/data/": with core.ignorecase (the default on Windows and macOS) that also ignores the Data/ source folder,
+# so new migrations under Data/Migrations would silently be left out of commits.
+/data/keys/
