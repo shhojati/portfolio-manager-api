@@ -3,7 +3,7 @@
 import * as api from './api.js';
 import { realtime } from './realtime.js';
 
-export const KNOWN_TYPES = ['Stock', 'ETF', 'Fund', 'Crypto', 'Currency', 'Gold', 'Coin', 'Metal'];
+export const KNOWN_TYPES = ['Stock', 'ETF', 'Fund', 'Certificate', 'Salaf', 'Crypto', 'Currency', 'Gold', 'Coin', 'Metal'];
 
 const byId = new Map();
 let loading = null;

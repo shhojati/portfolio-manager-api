@@ -8,8 +8,9 @@ namespace PortfolioManager.Api.Tsetmc;
 
 /// <summary>
 /// Background job that imports every stock and ETF listed on TSETMC (Tehran Stock Exchange, Farabourse, and the
-/// commodity and energy exchanges) as an <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading
-/// day up to date (closing price, plus redemption NAV for ETFs). Once a day it also discovers the ones the market watch
+/// commodity and energy exchanges), and the commodity exchange's deposit certificates and parallel salaf contracts, as
+/// an <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading day up to date (closing price, plus
+/// redemption NAV for ETFs). Once a day it also discovers the ones the market watch
 /// leaves out, such as suspended instruments.
 /// </summary>
 public sealed class TsetmcPriceSyncService(
@@ -19,6 +20,8 @@ public sealed class TsetmcPriceSyncService(
 {
     public const string StockType = "Stock";
     public const string EtfType = "ETF";
+    public const string CertificateType = "Certificate";
+    public const string SalafType = "Salaf";
 
     private static readonly TimeZoneInfo Tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
 
@@ -165,7 +168,7 @@ public sealed class TsetmcPriceSyncService(
     /// The market watch only has instruments active that day, so a stock or fund suspended (or not traded for months)
     /// since before it was first imported would never be: e.g. نور, a project fund that hasn't traded since listing.
     /// This looks up every instrument TSETMC knows of that the market watch left out, each only once (the result is
-    /// kept in <see cref="AppDbContext.TsetmcInstruments"/>), and imports the stocks and funds among them with their
+    /// kept in <see cref="AppDbContext.TsetmcInstruments"/>), and imports the stocks, funds, certificates and salaf among them with their
     /// last closing price, dated by the day they last traded.
     /// </summary>
     private async Task DiscoverInstrumentsAsync(TsetmcOptions opts, CancellationToken ct)
@@ -259,7 +262,7 @@ public sealed class TsetmcPriceSyncService(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "TSETMC instrument discovery finished in {Elapsed}: {Codes} instruments outside the market watch, {LookedUp} looked up ({LookupsFailed} failed), {Importable} stocks and funds ({NoPrice} without a price), {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
+            "TSETMC instrument discovery finished in {Elapsed}: {Codes} instruments outside the market watch, {LookedUp} looked up ({LookupsFailed} failed), {Importable} stocks, funds, certificates and salaf ({NoPrice} without a price), {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
             TimeProvider.System.GetElapsedTime(start), codes.Count, looked.Count, lookupsFailed, importable.Count,
             importable.Count - closings.Count, createdAssets, createdPrices, updatedPrices, skipped);
     }
@@ -280,7 +283,10 @@ public sealed class TsetmcPriceSyncService(
                 return (null, false);
             }
 
-            asset = new Asset { Symbol = symbol, Identifier = isin, Name = Truncate(Normalize(item.Name), 100), Type = type };
+            asset = new Asset
+            {
+                Symbol = symbol, Identifier = isin, Name = Truncate(Normalize(item.Name), 100), Type = type, Unit = UnitOf(type, symbol),
+            };
             db.Assets.Add(asset);
             assets[isin] = asset;
             created = true;
@@ -368,14 +374,24 @@ public sealed class TsetmcPriceSyncService(
 
     /// <summary>
     /// The asset type an instrument is imported as, from its ISIN alone: ETFs are exchange-traded fund units (IRT),
-    /// stocks are main shares on TSE/IFB/base market (IRO1/3/5/7). The sector code isn't used: it agrees for everything
-    /// in the market watch, but TSETMC files some project funds under their project's industry instead of sector 68
-    /// (پرند is in sector 40, electricity supply).
+    /// stocks are main shares on TSE/IFB/base market (IRO1/3/5/7), certificates are the commodity exchange's deposit
+    /// certificates (IRK: coin, saffron, pistachio, glass...) and salaf its parallel salaf contracts (IRBK). The sector
+    /// code isn't used: it agrees for everything in the market watch, but TSETMC files some project funds under their
+    /// project's industry instead of sector 68 (پرند is in sector 40, electricity supply).
     /// </summary>
     private static string? Classify(string? isin)
     {
-        // ISINs ending in 0001 are the primary instrument; other suffixes are rights, unit classes, etc.
-        if (isin is not { Length: 12 } || !isin.EndsWith("0001", StringComparison.Ordinal))
+        if (isin is not { Length: 12 })
+            return null;
+
+        // Each certificate or salaf issue is an instrument of its own, so these ISINs carry no 0001 suffix.
+        if (isin.StartsWith("IRK", StringComparison.Ordinal))
+            return CertificateType;
+        if (isin.StartsWith("IRBK", StringComparison.Ordinal))
+            return SalafType;
+
+        // Otherwise, ISINs ending in 0001 are the primary instrument; other suffixes are rights, unit classes, etc.
+        if (!isin.EndsWith("0001", StringComparison.Ordinal))
             return null;
         if (isin.StartsWith("IRT", StringComparison.Ordinal))
             return EtfType;
@@ -384,6 +400,11 @@ public sealed class TsetmcPriceSyncService(
 
         return null;
     }
+
+    // What one price is for, where the type's default doesn't say: a coin certificate's price is for one coin. Other
+    // certificates are left alone; their unit varies by commodity and TSETMC doesn't give it.
+    private static string? UnitOf(string type, string symbol) =>
+        type == CertificateType && symbol.StartsWith("سکه", StringComparison.Ordinal) ? "عدد" : null;
 
     // Prices from this job are dated by trading day, stored as midnight UTC of that date.
     private static DateTime ToPriceDate(DateOnly day) => day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
