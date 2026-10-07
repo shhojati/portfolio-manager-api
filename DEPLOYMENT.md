@@ -373,6 +373,7 @@ curl -sS -o /dev/null -w "tsetmc %{http_code}\n" -A "Mozilla/5.0" https://cdn.ts
 curl -sS -o /dev/null -w "bitpin %{http_code}\n" https://api.bitpin.ir/
 curl -sS -o /dev/null -w "tgju   %{http_code}\n" https://call1.tgju.org/ajax.json
 curl -sS -o /dev/null -w "fipiran %{http_code}\n" -A "Mozilla/5.0" https://www.fipiran.ir/services/fund/fundtype
+curl -sS -o /dev/null -w "ime    %{http_code}\n" -A "Mozilla/5.0" https://dataapi.ime.co.ir/
 ```
 
 Any `200`–`4xx` answer means the host is reachable; timeouts or connection errors mean that price
@@ -513,6 +514,37 @@ limit. Configure the proxy to take the client IP from the CDN's header (Caddy: `
 `client_ip_headers`; nginx: `real_ip_header` + `set_real_ip_from` with the CDN's IP ranges), so the
 `X-Forwarded-For` it sends to the app contains the real client IP.
 
+### 7.4 ParsPack CDN
+
+The domain's DNS is hosted on ParsPack's CDN ([section 8.1](#81-current-setup-before-the-cutover)). Each
+record has a proxy switch; with it off ("DNS only") the CDN only answers DNS and none of this section
+applies. Before turning the proxy on for the service record:
+
+- **Real client IP.** Trust ParsPack's edge IP ranges in the proxy (section 7.3). The ranges can
+  change, so they are not listed here; get the current ones from ParsPack support or their docs. With
+  nginx, add to the `server` block, one `set_real_ip_from` per range:
+  ```nginx
+  set_real_ip_from <PARSPACK_RANGE>;
+  real_ip_header X-Forwarded-For;
+  real_ip_recursive on;
+  ```
+  nginx then logs the visitor's IP as `$remote_addr` and appends it to the `X-Forwarded-For` it sends
+  to the app. Check `/var/log/nginx/access.log` after opening the site from your phone: the first
+  column must be the phone's IP, not a ParsPack address. Without this, the per-IP `Anonymous` and
+  `Auth` limits are shared by all visitors. (With Caddy, configure `trusted_proxies` and verify the same
+  way; Caddy's handling of forwarded headers differs from nginx's.)
+- **Caching off for the app.** API responses carry no `Cache-Control` header and the backoffice files
+  are served with `no-cache`. Set the CDN to bypass the cache (or to follow the origin's headers) for
+  every path. A cached `/api/...` response would show stale prices and could hand one user's data to
+  another.
+- **WebSocket on.** Enable WebSocket support in the CDN settings, or `/ws` (the live feed, the green
+  **Live** dot) fails. The app sends a keep-alive every 30 seconds, so idle timeouts are not a problem.
+- **HTTPS to the origin.** Let the CDN connect to the VPS over HTTPS and keep the `Host` header (the
+  domain), so Caddy/nginx pick the right site.
+- **Certificate on the VPS.** Let's Encrypt validates over HTTP through whatever the record points
+  at. Issue the first certificate with the proxy off, then turn it on. If renewals later fail behind the
+  CDN, turn the proxy off for a moment and renew, or use ParsPack's certificate instead.
+
 ---
 
 ## 8. Migrate from Liara (cutover)
@@ -524,7 +556,34 @@ What must move: the contents of the Liara disk `data` (mounted at `/app/data`):
 - Moving `keys/` keeps admins signed in and keeps existing API tokens working. Without it, admins
   sign in again and API clients request new tokens; nothing else is affected.
 
-### 8.1 Steps
+### 8.1 Current setup (before the cutover)
+
+As of October 2026 the service runs on Liara, and its domain's DNS is hosted on ParsPack's CDN:
+
+| Item | Value |
+|---|---|
+| Domain | `shahabdev.ir`, registered at IRNIC (nic.ir) |
+| Nameservers (set at IRNIC, IP fields left empty) | `ns1.parspack.net`, `ns2.parspack.net`, `ns3.parspack.net`, `ns4.parspack.net` |
+| Where DNS records are edited | ParsPack panel → CDN → the domain → DNS settings |
+| Service URL | `https://portfolio-api.shahabdev.ir` |
+| Liara app | `portfolio-manager` (also reachable at `portfolio-manager.liara.run`) |
+| CDN proxy | Off on every record. On Liara it should stay off: the app trusts only the last `X-Forwarded-For` entry, which would then be the CDN's address, so all visitors would share one per-IP rate limit |
+| Certificates | Issued by Liara through the `_acme-challenge` CNAME records below (DNS validation) |
+
+DNS records and what to do with them at the cutover:
+
+| Name | Type | Value | Purpose | At the cutover |
+|---|---|---|---|---|
+| `portfolio-api` | CNAME | `sabalan.liara.cloud` | The service | Replace with `A` → `<VPS_IP>` |
+| `@` | A | `185.208.181.133` | Root domain → Liara (the address behind `sabalan.liara.cloud`). Liara asks for a CNAME/ALIAS here, but ParsPack's setup wizard requires an `A` record on `@` | `<VPS_IP>` if the root domain should reach the VPS. Don't delete it; ParsPack wants an `A` record on `@` |
+| `liara-challenge` | TXT | value from Liara | Proves domain ownership to Liara (root) | Delete |
+| `_acme-challenge` | CNAME | `shahabdev-ir._acme-challenge.liara.cloud` | Liara's certificate (root). Never proxied | Delete |
+| `liara-challenge.portfolio-api` | TXT | value from Liara | Proves domain ownership to Liara (subdomain) | Delete |
+| `_acme-challenge.portfolio-api` | CNAME | `portfolio-api-shahabdev-ir._acme-challenge.liara.cloud` | Liara's certificate (subdomain). Never proxied | Delete |
+
+A day before the cutover, lower the TTL of `portfolio-api` and `@` to the minimum (section 5.1).
+
+### 8.2 Steps
 
 1. **Prepare the VPS** fully (sections 5–7) and test it with a fresh database if you like. Then
    remove that test data: `docker compose down && sudo rm -rf data`.
@@ -545,14 +604,14 @@ What must move: the contents of the Liara disk `data` (mounted at `/app/data`):
    ```
 5. **Start the app:** `docker compose up -d --build`, then check the logs (section 6.4). There should be
    no `Created ... user` lines (users exist) and no "No admin user exists" warning.
-6. **Switch DNS** to the VPS (if the domain was pointing at Liara) or give API consumers the new URL
-   (if they used the `*.liara.run` address).
+6. **Switch DNS** to the VPS (the records in [section 8.1](#81-current-setup-before-the-cutover)), and
+   give the new URL to API consumers that used the `*.liara.run` address.
 7. **Verify** (section 9), then **disable Liara deploys**: delete or disable
    `.github/workflows/deploy-liara.yml`. Otherwise every push to `master` still deploys to Liara, and
    a second copy of the service would run with its own, diverging database.
 8. Keep the Liara app stopped (not deleted) for a few days as a fallback, then delete it.
 
-### 8.2 Rollback
+### 8.3 Rollback
 
 Start the Liara app again and point DNS back. Data written on the VPS after the cutover would need to
 be copied back the same way (stop VPS app, copy `data/` to the Liara disk).
@@ -702,7 +761,10 @@ cd /opt/portfolio-manager && docker compose up -d --no-build
 
 The image name `portfolio-manager:latest` matches `image:` in `docker-compose.yml`, so
 `--no-build` runs the loaded image. Repeat for every update. (This can be automated in GitHub Actions:
-build, `docker save`, `scp` to the VPS, `docker load`, `docker compose up -d --no-build`.)
+build, `docker save`, `scp` to the VPS, `docker load`, `docker compose up -d --no-build`. No such
+workflow exists yet; `.github/workflows/deploy-liara.yml` only deploys to Liara. GitHub's runners are
+outside Iran, so before writing one, check that they can reach the VPS over SSH: some Iranian data
+centers filter incoming foreign traffic.)
 
 **B. Publish elsewhere, build the runtime image on the VPS** (needs only `mcr.microsoft.com` for the
 `aspnet:10.0` base image, the same approach Liara used):
