@@ -209,8 +209,8 @@ users already exist and these variables are not needed at all.
 | `Cors__AllowedOrigins__0` | *(none)* | Browser apps on **other origins** allowed to call the API, e.g. `https://portfolio.example.com`. Not needed for server-to-server calls or the built-in backoffice |
 | `Swagger__Enabled` | `true` | Serve API docs at `/swagger` (docs only; calls still need auth) |
 | `AllowedHosts` | `*` | Restrict accepted `Host` headers, e.g. `api.example.com` |
-| `Tsetmc__Enabled` / `Bitpin__Enabled` / `Tgju__Enabled` / `Fipiran__Enabled` | `true` | Turn a price sync job off |
-| `Tsetmc__Interval`, `Bitpin__Interval`, `Tgju__Interval`, `Fipiran__Interval` | `01:00:00`, `00:15:00`, `00:15:00`, `01:00:00` | Sync frequency |
+| `Tsetmc__Enabled` / `Bitpin__Enabled` / `Tgju__Enabled` / `Fipiran__Enabled` / `Ime__Enabled` | `true` | Turn a price sync job off |
+| `Tsetmc__Interval`, `Bitpin__Interval`, `Tgju__Interval`, `Fipiran__Interval`, `Ime__Interval` | `01:00:00`, `00:15:00`, `00:15:00`, `01:00:00`, `01:00:00` | Sync frequency |
 | `Tsetmc__MarketOpen` / `Tsetmc__MarketClose` | `08:45` / `13:00` | TSETMC active hours (Tehran) |
 | `Tsetmc__SyncEtfNav`, `Tsetmc__NavInterval`, `Tsetmc__NavClose`, `Tsetmc__NavConcurrency` | `true`, `01:00:00`, `18:30`, `4` | ETF NAV sync |
 | `Tsetmc__RunOnStartup` | `true` | Run one TSETMC sync at startup even outside market hours |
@@ -218,6 +218,7 @@ users already exist and these variables are not needed at all.
 | `Tsetmc__ExtraInsCodes__0`, `__1`, ... | empty | TSETMC instrument codes (the number in a `tsetmc.com/instInfo/...` link) that discovery always considers, for an instrument missing from both the market watch and TSETMC's list of all instruments |
 | `Tgju__MaxQuoteAge` | `7.00:00:00` | Ignore tgju quotes older than this |
 | `Fipiran__MaxNavAge` | `7.00:00:00` | Ignore funds whose latest NAV is older than this |
+| `Ime__LookbackDays` | `7` | Days of IME gold/silver certificate prices fetched each run; raise it once to import older prices (IME has them from 1401/12). IME only answers Iranian IPs, so this job fails on a server outside Iran |
 | `Logging__LogLevel__Default` | `Information` | Log verbosity (`Debug`, `Information`, `Warning`, `Error`) |
 
 After editing `.env`, apply it with `docker compose up -d` (this recreates the container; a plain

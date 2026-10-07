@@ -6,6 +6,7 @@ using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Fipiran;
+using PortfolioManager.Api.Ime;
 using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tgju;
@@ -76,6 +77,17 @@ builder.Services.AddHttpClient<FipiranClient>(http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<FipiranPriceSyncService>();
+
+// Background import of the commodity exchange's continuous gold and silver deposit certificates (in Rial) from ime.co.ir.
+builder.Services.Configure<ImeOptions>(builder.Configuration.GetSection(ImeOptions.SectionName));
+builder.Services.AddHttpClient<ImeClient>(http =>
+    {
+        http.BaseAddress = new Uri("https://dataapi.ime.co.ir/");
+        http.Timeout = TimeSpan.FromSeconds(60);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PortfolioManager/1.0");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+builder.Services.AddHostedService<ImePriceSyncService>();
 
 // Admins sign in with a cookie, API clients with a bearer token; see Auth/AuthSetup.cs.
 builder.AddPortfolioAuth();
