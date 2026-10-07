@@ -3,7 +3,7 @@ namespace PortfolioManager.Api.Tgju;
 /// <summary>
 /// An instrument in tgju's feed and the <see cref="Models.Asset"/> it is imported as. <see cref="Code"/> is a stable Latin
 /// code (ISO 4217 for currencies) stored as the asset's identifier; <see cref="Symbol"/> is the short Persian name shown
-/// to users (at most 20 characters) and <see cref="Name"/> the full one. The price tgju quotes is for <see cref="Units"/>
+/// to users (at most 100 characters) and <see cref="Name"/> the full one. The price tgju quotes is for <see cref="Units"/>
 /// units, in Rial, or in US dollars when <see cref="InUsd"/> is set (world metal prices). <see cref="Unit"/> names what one
 /// stored price is for («گرم», «مثقال», «عدد»...); null leaves it to the app's default for the type.
 /// <see cref="Intrinsic"/>, when set, is what the instrument's gold is worth at the world price, stored as each price's

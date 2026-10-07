@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PortfolioManager.Api.Data;
@@ -10,7 +11,7 @@ namespace PortfolioManager.Api.Fipiran;
 /// Fund <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per NAV date up to date with its redemption NAV
 /// (NAV ابطال), in Rial per unit. Exchange-traded funds are left to the TSETMC job, which imports them as ETFs.
 /// </summary>
-public sealed class FipiranPriceSyncService(
+public sealed partial class FipiranPriceSyncService(
     IServiceScopeFactory scopeFactory,
     IOptions<FipiranOptions> options,
     ILogger<FipiranPriceSyncService> logger) : BackgroundService
@@ -93,12 +94,17 @@ public sealed class FipiranPriceSyncService(
             .GroupBy(p => (p.AssetId, p.Date))
             .ToDictionary(g => g.Key, g => g.First());
 
-        int createdAssets = 0, createdPrices = 0, skipped = 0;
+        // Funds are matched by their identifier (the registration number), which never changes, so a fund renamed on
+        // FIPIRAN, or a change to how names are cleaned, renames the existing asset on the next run, keeping its prices.
+        int createdAssets = 0, renamedAssets = 0, createdPrices = 0, skipped = 0;
         foreach (var (code, name, nav, date) in funds)
         {
             if (!imported.TryGetValue(code, out var asset))
             {
-                if (code.Length > 20 || !symbols.Add(code) || !identifiers.Add(code))
+                // The name doubles as the symbol, since funds have no ticker; if another asset already uses it as its
+                // symbol (e.g. an ETF whose ticker is the same word), the registration code is the symbol instead.
+                var symbol = symbols.Contains(name) ? code : name;
+                if (!symbols.Add(symbol) || !identifiers.Add(code))
                 {
                     // An asset of another type (e.g. one added by hand) already uses this symbol or identifier.
                     skipped++;
@@ -106,10 +112,14 @@ public sealed class FipiranPriceSyncService(
                     continue;
                 }
 
-                asset = new Asset { Symbol = code, Identifier = code, Name = name, Type = FundType };
+                asset = new Asset { Symbol = symbol, Identifier = code, Name = name, Type = FundType };
                 db.Assets.Add(asset);
                 imported[code] = asset;
                 createdAssets++;
+            }
+            else if (asset.Symbol != name || asset.Name != name)
+            {
+                renamedAssets += Rename(asset, name, symbols) ? 1 : 0;
             }
 
             // One row per asset per NAV date. The redemption NAV is what a unit is worth to its holder, so it is the
@@ -129,17 +139,52 @@ public sealed class FipiranPriceSyncService(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "FIPIRAN fund NAV sync finished in {Elapsed}: {Funds} funds received, {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Stale} stale, {Skipped} skipped (symbol taken)",
-            TimeProvider.System.GetElapsedTime(start), funds.Count, createdAssets, createdPrices, updatedPrices, stale, skipped);
+            "FIPIRAN fund NAV sync finished in {Elapsed}: {Funds} funds received, {CreatedAssets} assets added, {RenamedAssets} renamed, {CreatedPrices} prices added, {UpdatedPrices} updated, {Stale} stale, {Skipped} skipped (symbol taken)",
+            TimeProvider.System.GetElapsedTime(start), funds.Count, createdAssets, renamedAssets, createdPrices, updatedPrices, stale, skipped);
     }
 
-    // Funds have no ticker, so symbol and identifier both come from the SEO registration number, e.g. "FUND-10789".
+    // Brings an existing fund's name, and its symbol where that is free, in line with FIPIRAN.
+    private static bool Rename(Asset asset, string name, HashSet<string> symbols)
+    {
+        var renamed = asset.Name != name;
+        asset.Name = name;
+
+        if (asset.Symbol != name && symbols.Add(name))
+        {
+            symbols.Remove(asset.Symbol);
+            asset.Symbol = name;
+            renamed = true;
+        }
+
+        return renamed;
+    }
+
+    // Funds have no ticker or ISIN, so the identifier comes from the SEO registration number, e.g. "FUND-10789".
     private static string Code(string regNo) => $"FUND-{regNo.Trim()}";
 
-    // FIPIRAN uses Arabic ي/ك in some names; store Persian ی/ک so searches typed on a Persian keyboard match.
+    // FIPIRAN uses Arabic ي/ك in some names; store Persian ی/ک so searches typed on a Persian keyboard match. Its names
+    // mostly leave out «صندوق سرمایه‌گذاری» («مشترک پیشرو مفید»), but a few keep it or carry stray characters from the
+    // site's markup («>صندوق سرمایه‌گذاری بازنشستگی تکمیلی اندوخته آگاه»), so both are stripped.
     private static string Name(FundItem item)
     {
-        var name = (string.IsNullOrWhiteSpace(item.Name) ? item.RegNo! : item.Name).Replace('ي', 'ی').Replace('ك', 'ک').Trim();
-        return name.Length > 100 ? name[..100] : name;
+        var name = (item.Name ?? string.Empty).Replace('ي', 'ی').Replace('ك', 'ک');
+        name = Whitespace().Replace(name, " ");
+        name = Edges().Replace(name, string.Empty);
+        name = FundPrefix().Replace(name, string.Empty);
+        if (name.Length == 0)
+            name = item.RegNo!.Trim();
+
+        return name.Length > 100 ? name[..100].TrimEnd() : name;
     }
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
+
+    // Anything but a letter or digit at the start, or anything but a letter, digit or closing bracket at the end.
+    [GeneratedRegex(@"^[^\p{L}\p{N}]+|[^\p{L}\p{N})]+$")]
+    private static partial Regex Edges();
+
+    // «صندوق سرمایه‌گذاری» (with a ZWNJ, a space or nothing between سرمایه and گذاری), or just «صندوق», at the start.
+    [GeneratedRegex("^صندوق (سرمایه[\u200c ]?گذاری )?")]
+    private static partial Regex FundPrefix();
 }

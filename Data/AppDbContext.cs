@@ -25,7 +25,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     {
         modelBuilder.Entity<Asset>(e =>
         {
-            e.Property(a => a.Symbol).HasMaxLength(20).IsRequired();
+            e.Property(a => a.Symbol).HasMaxLength(100).IsRequired();
             e.Property(a => a.Identifier).HasMaxLength(100).IsRequired();
             e.Property(a => a.Name).HasMaxLength(100).IsRequired();
             e.Property(a => a.Type).HasMaxLength(50);

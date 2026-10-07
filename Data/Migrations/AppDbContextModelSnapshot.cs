@@ -38,7 +38,7 @@ namespace PortfolioManager.Api.Data.Migrations
 
                     b.Property<string>("Symbol")
                         .IsRequired()
-                        .HasMaxLength(20)
+                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("TsetmcInsCode")
