@@ -20,10 +20,18 @@ public sealed class TsetmcOptions
     public TimeOnly MarketClose { get; set; } = new(13, 0);
 
     /// <summary>
-    /// TSETMC instrument codes (insCode, the number in a tsetmc.com/instInfo/... link) imported on top of the market
-    /// watch. Energy Exchange instruments only show up in the market watch once their session opens that day, so a
-    /// suspended one (e.g. a project fund that hasn't traded since listing) never does. Codes the market watch did
-    /// return are ignored; each other one costs two requests per run.
+    /// Once a day, also import the stocks and funds the market watch leaves out: it only has instruments active that
+    /// day, so one suspended (or not traded for months) since before it was first imported would never be. The first
+    /// run looks up every such instrument once (about 6,500 requests, some 3 minutes); later runs only new ones.
+    /// </summary>
+    public bool DiscoverInstruments { get; set; } = true;
+
+    /// <summary>Maximum parallel requests while discovering instruments.</summary>
+    public int DiscoveryConcurrency { get; set; } = 4;
+
+    /// <summary>
+    /// TSETMC instrument codes (insCode, the number in a tsetmc.com/instInfo/... link) that discovery always considers,
+    /// for an instrument missing from both the market watch and TSETMC's list of all instruments.
     /// </summary>
     public string[] ExtraInsCodes { get; set; } = [];
 

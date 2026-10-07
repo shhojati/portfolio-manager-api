@@ -90,6 +90,32 @@ namespace PortfolioManager.Api.Data.Migrations
                     b.ToTable("Prices");
                 });
 
+            modelBuilder.Entity("PortfolioManager.Api.Models.TsetmcInstrument", b =>
+                {
+                    b.Property<string>("InsCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Isin")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("InsCode");
+
+                    b.ToTable("TsetmcInstruments");
+                });
+
             modelBuilder.Entity("PortfolioManager.Api.Models.User", b =>
                 {
                     b.Property<int>("Id")

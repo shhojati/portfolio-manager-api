@@ -30,18 +30,39 @@ public sealed class TsetmcClient(HttpClient http)
     }
 
     /// <summary>
-    /// One instrument's latest closing price, in the same shape as a market watch item, or null if TSETMC doesn't know
-    /// the code. For instruments the market watch leaves out, such as suspended ones on the Iran Energy Exchange.
+    /// Codes of every instrument TSETMC keeps market watch filter statistics for, including suspended ones and ones
+    /// that haven't traded for months, which the market watch leaves out. It is the only list found that has them, but
+    /// it carries no names or ISINs, and it isn't a superset of the market watch either. A single large request
+    /// (about 330,000 rows); the statistics themselves are ignored.
     /// </summary>
-    public async Task<MarketWatchItem?> GetInstrumentAsync(string insCode, CancellationToken ct)
+    public async Task<IReadOnlySet<string>> GetAllInsCodesAsync(CancellationToken ct)
     {
-        var code = Uri.EscapeDataString(insCode);
-        var info = (await http.GetFromJsonAsync<InstrumentInfoResponse>($"api/Instrument/GetInstrumentInfo/{code}", ct))?.InstrumentInfo;
-        if (string.IsNullOrEmpty(info?.InstrumentId))
+        var response = await http.GetFromJsonAsync<InstValuesResponse>("api/MarketData/GetInstValueAllInstAllParam", ct);
+        return (response?.InstValueAllInstAllParam ?? []).Select(v => v.InsCode).OfType<string>().ToHashSet();
+    }
+
+    /// <summary>
+    /// An instrument's ISIN, symbol and name, in the shape of a market watch item with no price (see
+    /// <see cref="GetClosingPriceAsync"/>), or null if TSETMC doesn't know the code.
+    /// </summary>
+    public async Task<MarketWatchItem?> GetInstrumentInfoAsync(string insCode, CancellationToken ct)
+    {
+        var info = (await http.GetFromJsonAsync<InstrumentInfoResponse>(
+            $"api/Instrument/GetInstrumentInfo/{Uri.EscapeDataString(insCode)}", ct))?.InstrumentInfo;
+        return string.IsNullOrEmpty(info?.InstrumentId)
+            ? null
+            : new MarketWatchItem(insCode, info.InstrumentId, info.Symbol, info.Name, 0);
+    }
+
+    /// <summary>An instrument's latest closing price and the day it was last traded, or null if it has none.</summary>
+    public async Task<ClosingPrice?> GetClosingPriceAsync(string insCode, CancellationToken ct)
+    {
+        var info = (await http.GetFromJsonAsync<ClosingPriceInfoResponse>(
+            $"api/ClosingPrice/GetClosingPriceInfo/{Uri.EscapeDataString(insCode)}", ct))?.ClosingPriceInfo;
+        if (info is null || info.ClosingPrice <= 0 || ParseDate(info.LastTradeDEven) is not { } date)
             return null;
 
-        var closing = (await http.GetFromJsonAsync<ClosingPriceInfoResponse>($"api/ClosingPrice/GetClosingPriceInfo/{code}", ct))?.ClosingPriceInfo;
-        return new MarketWatchItem(insCode, info.InstrumentId, info.Symbol, info.Name, info.Sector?.Code, closing?.ClosingPrice ?? 0);
+        return new ClosingPrice(date, info.ClosingPrice);
     }
 
     /// <summary>Latest redemption NAV (NAV ابطال) of an ETF, or null if TSETMC has none.</summary>
@@ -70,14 +91,17 @@ public sealed class TsetmcClient(HttpClient http)
     private sealed record InstrumentInfo(
         [property: JsonPropertyName("instrumentID")] string? InstrumentId,
         [property: JsonPropertyName("lVal18AFC")] string? Symbol,
-        [property: JsonPropertyName("lVal30")] string? Name,
-        [property: JsonPropertyName("sector")] SectorInfo? Sector);
-
-    private sealed record SectorInfo([property: JsonPropertyName("cSecVal")] string? Code);
+        [property: JsonPropertyName("lVal30")] string? Name);
 
     private sealed record ClosingPriceInfoResponse(ClosingPriceInfo? ClosingPriceInfo);
 
-    private sealed record ClosingPriceInfo([property: JsonPropertyName("pClosing")] decimal ClosingPrice);
+    private sealed record ClosingPriceInfo(
+        [property: JsonPropertyName("finalLastDate")] int LastTradeDEven,
+        [property: JsonPropertyName("pClosing")] decimal ClosingPrice);
+
+    private sealed record InstValuesResponse(List<InstValue>? InstValueAllInstAllParam);
+
+    private sealed record InstValue([property: JsonPropertyName("insCode")] string? InsCode);
 
     private sealed record EtfResponse(EtfInfo? Etf);
 
@@ -91,7 +115,8 @@ public sealed record MarketWatchItem(
     [property: JsonPropertyName("insID")] string? Isin,
     [property: JsonPropertyName("lva")] string? Symbol,
     [property: JsonPropertyName("lvc")] string? Name,
-    [property: JsonPropertyName("csv")] string? SectorCode,
     [property: JsonPropertyName("pcl")] decimal ClosingPrice);
 
 public sealed record EtfNav(DateOnly Date, decimal Value);
+
+public sealed record ClosingPrice(DateOnly LastTradeDate, decimal Value);

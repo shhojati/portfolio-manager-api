@@ -7,9 +7,10 @@ using PortfolioManager.Api.Models;
 namespace PortfolioManager.Api.Tsetmc;
 
 /// <summary>
-/// Background job that imports every Tehran Stock Exchange / Farabourse stock and ETF, plus the instruments listed in
-/// <see cref="TsetmcOptions.ExtraInsCodes"/> (e.g. suspended Energy Exchange funds), as an <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading day up to date
-/// (closing price, plus redemption NAV for ETFs).
+/// Background job that imports every stock and ETF listed on TSETMC (Tehran Stock Exchange, Farabourse, and the
+/// commodity and energy exchanges) as an <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading
+/// day up to date (closing price, plus redemption NAV for ETFs). Once a day it also discovers the ones the market watch
+/// leaves out, such as suspended instruments.
 /// </summary>
 public sealed class TsetmcPriceSyncService(
     IServiceScopeFactory scopeFactory,
@@ -36,6 +37,7 @@ public sealed class TsetmcPriceSyncService(
 
         var force = opts.RunOnStartup;
         DateTime? lastNavSync = null;
+        DateOnly? lastDiscovery = null;
         using var timer = new PeriodicTimer(opts.Interval);
 
         try
@@ -62,12 +64,20 @@ public sealed class TsetmcPriceSyncService(
                 try
                 {
                     if (syncPrices)
-                        await SyncPricesAsync(opts, stoppingToken);
+                        await SyncPricesAsync(stoppingToken);
 
                     if (syncNavs)
                     {
                         await SyncEtfNavsAsync(opts, stoppingToken);
                         lastNavSync = now;
+                    }
+
+                    // Last, since its first run is slow; if it fails, it is tried again next run.
+                    var today = DateOnly.FromDateTime(now);
+                    if (syncPrices && opts.DiscoverInstruments && lastDiscovery != today)
+                    {
+                        await DiscoverInstrumentsAsync(opts, stoppingToken);
+                        lastDiscovery = today;
                     }
 
                     logger.LogInformation("TSETMC sync run finished in {Elapsed}; next run at {Next:yyyy-MM-dd HH:mm}",
@@ -96,7 +106,7 @@ public sealed class TsetmcPriceSyncService(
         return time >= opts.MarketOpen && time <= until;
     }
 
-    private async Task SyncPricesAsync(TsetmcOptions opts, CancellationToken ct)
+    private async Task SyncPricesAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var client = scope.ServiceProvider.GetRequiredService<TsetmcClient>();
@@ -109,9 +119,6 @@ public sealed class TsetmcPriceSyncService(
             ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tehran));
         var date = ToPriceDate(tradingDay);
         var items = await client.GetMarketWatchAsync(ct);
-        var extras = await GetExtraInstrumentsAsync(client, opts, items, ct);
-        var instruments = items.Select(i => (Item: i, Type: Classify(i)))
-            .Concat(extras.Select(i => (Item: i, Type: Classify(i, listedByHand: true))));
 
         var assets = await db.Assets.ToDictionaryAsync(a => a.Identifier, ct);
         var symbols = assets.Values.Select(a => a.Symbol).ToHashSet();
@@ -120,30 +127,19 @@ public sealed class TsetmcPriceSyncService(
             .ToDictionary(g => g.Key, g => g.First());
 
         int createdAssets = 0, createdPrices = 0, skipped = 0;
-        foreach (var (item, classified) in instruments)
+        foreach (var item in items)
         {
-            if (classified is not { } type || item.ClosingPrice <= 0)
+            if (string.IsNullOrEmpty(item.InsCode) || Classify(item.Isin) is not { } type || item.ClosingPrice <= 0)
                 continue;
 
-            var isin = item.Isin!;
-            if (!assets.TryGetValue(isin, out var asset))
+            var (asset, created) = GetOrAddAsset(db, assets, symbols, item, type);
+            if (asset is null)
             {
-                var symbol = Normalize(item.Symbol).ToUpperInvariant();
-                if (symbol.Length is 0 or > 100 || !symbols.Add(symbol))
-                {
-                    // Another asset (e.g. one added by hand) already uses this symbol.
-                    skipped++;
-                    logger.LogDebug("Skipping {Isin}: symbol '{Symbol}' is already taken", isin, symbol);
-                    continue;
-                }
-
-                asset = new Asset { Symbol = symbol, Identifier = isin, Name = Normalize(item.Name), Type = type };
-                db.Assets.Add(asset);
-                assets[isin] = asset;
-                createdAssets++;
+                skipped++;
+                continue;
             }
 
-            asset.TsetmcInsCode = item.InsCode;
+            createdAssets += created ? 1 : 0;
 
             // One row per asset per trading day, updated in place during the session.
             if (asset.Id != 0 && dayPrices.TryGetValue(asset.Id, out var price))
@@ -161,35 +157,171 @@ public sealed class TsetmcPriceSyncService(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "TSETMC price sync finished in {Elapsed} for trading day {Date:yyyy-MM-dd}: {Instruments} instruments received ({Extra} listed by hand), {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
-            TimeProvider.System.GetElapsedTime(start), tradingDay, items.Count + extras.Count, extras.Count, createdAssets, createdPrices, updatedPrices, skipped);
+            "TSETMC price sync finished in {Elapsed} for trading day {Date:yyyy-MM-dd}: {Instruments} instruments received, {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
+            TimeProvider.System.GetElapsedTime(start), tradingDay, items.Count, createdAssets, createdPrices, updatedPrices, skipped);
     }
 
-    // Fetches the instruments in ExtraInsCodes one by one, leaving out any the market watch already returned.
-    private async Task<List<MarketWatchItem>> GetExtraInstrumentsAsync(
-        TsetmcClient client, TsetmcOptions opts, IReadOnlyList<MarketWatchItem> marketWatch, CancellationToken ct)
+    /// <summary>
+    /// The market watch only has instruments active that day, so a stock or fund suspended (or not traded for months)
+    /// since before it was first imported would never be: e.g. نور, a project fund that hasn't traded since listing.
+    /// This looks up every instrument TSETMC knows of that the market watch left out, each only once (the result is
+    /// kept in <see cref="AppDbContext.TsetmcInstruments"/>), and imports the stocks and funds among them with their
+    /// last closing price, dated by the day they last traded.
+    /// </summary>
+    private async Task DiscoverInstrumentsAsync(TsetmcOptions opts, CancellationToken ct)
     {
-        var listed = marketWatch.Select(i => i.InsCode).ToHashSet();
-        var extras = new List<MarketWatchItem>();
-        foreach (var insCode in opts.ExtraInsCodes.Select(c => c.Trim()).Where(c => c.Length > 0 && !listed.Contains(c)).Distinct())
+        using var scope = scopeFactory.CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<TsetmcClient>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        logger.LogInformation("TSETMC instrument discovery started");
+        var start = TimeProvider.System.GetTimestamp();
+
+        var marketWatch = (await client.GetMarketWatchAsync(ct)).Select(i => i.InsCode).OfType<string>().ToHashSet();
+        var codes = (await client.GetAllInsCodesAsync(ct))
+            .Concat(opts.ExtraInsCodes.Select(c => c.Trim()).Where(c => c.Length > 0))
+            .Where(c => !marketWatch.Contains(c))
+            .ToHashSet();
+
+        // Look up the instruments not seen before, and keep them before going on, so a failure later doesn't repeat it.
+        var known = await db.TsetmcInstruments.ToDictionaryAsync(i => i.InsCode, ct);
+        var looked = new ConcurrentBag<TsetmcInstrument>();
+        var lookupsFailed = await ForEachWithRetriesAsync(codes.Where(c => !known.ContainsKey(c)), opts.DiscoveryConcurrency,
+            async (insCode, token) =>
+            {
+                var item = await client.GetInstrumentInfoAsync(insCode, token);
+                looked.Add(item is null
+                    ? new TsetmcInstrument { InsCode = insCode }
+                    : new TsetmcInstrument
+                    {
+                        InsCode = insCode,
+                        Isin = item.Isin,
+                        Symbol = Truncate(Normalize(item.Symbol), 100),
+                        Name = Truncate(Normalize(item.Name), 100),
+                    });
+            }, ct);
+        db.TsetmcInstruments.AddRange(looked);
+        await db.SaveChangesAsync(ct);
+        foreach (var instrument in looked)
+            known[instrument.InsCode] = instrument;
+
+        // Their prices don't change while they're suspended, but one may have traded since it was last seen. Many have
+        // no price at all: registered but never traded (TSETMC shows a placeholder 1,000), or ones TSETMC always answers
+        // with a 500 (e.g. IRO3Z... Farabourse instruments). Those are tried once, not three times, to keep runs short.
+        var importable = codes.Select(c => known.GetValueOrDefault(c))
+            .Where(i => i is not null && Classify(i.Isin) is not null)
+            .Select(i => i!)
+            .ToList();
+        var closings = new ConcurrentDictionary<string, ClosingPrice>();
+        await ForEachWithRetriesAsync(importable.Select(i => i.InsCode), opts.DiscoveryConcurrency,
+            async (insCode, token) =>
+            {
+                if (await client.GetClosingPriceAsync(insCode, token) is { } closing)
+                    closings[insCode] = closing;
+            }, ct, attempts: 1);
+
+        var assets = await db.Assets.ToDictionaryAsync(a => a.Identifier, ct);
+        var symbols = assets.Values.Select(a => a.Symbol).ToHashSet();
+        var dates = closings.Values.Select(c => ToPriceDate(c.LastTradeDate)).Distinct().ToList();
+        var assetIds = assets.Values.Select(a => a.Id).ToList();
+        var existingPrices = (await db.Prices.Where(p => dates.Contains(p.Date) && assetIds.Contains(p.AssetId)).ToListAsync(ct))
+            .GroupBy(p => (p.AssetId, p.Date))
+            .ToDictionary(g => g.Key, g => g.First());
+
+        int createdAssets = 0, createdPrices = 0, skipped = 0;
+        foreach (var instrument in importable)
         {
-            try
+            if (!closings.TryGetValue(instrument.InsCode, out var closing))
+                continue;
+
+            var item = new MarketWatchItem(instrument.InsCode, instrument.Isin, instrument.Symbol, instrument.Name, closing.Value);
+            var (asset, created) = GetOrAddAsset(db, assets, symbols, item, Classify(instrument.Isin)!);
+            if (asset is null)
             {
-                if (await client.GetInstrumentAsync(insCode, ct) is not { } item)
-                    logger.LogWarning("TSETMC has no instrument {InsCode} (listed in Tsetmc:ExtraInsCodes)", insCode);
-                else if (Classify(item, listedByHand: true) is null)
-                    logger.LogWarning("Not importing {InsCode} ({Isin}, listed in Tsetmc:ExtraInsCodes): it is neither a stock nor a fund", insCode, item.Isin);
-                else
-                    extras.Add(item);
+                skipped++;
+                continue;
             }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
+
+            createdAssets += created ? 1 : 0;
+            var date = ToPriceDate(closing.LastTradeDate);
+            if (asset.Id != 0 && existingPrices.TryGetValue((asset.Id, date), out var price))
             {
-                // One instrument failing must not hold up the rest of the market; it is fetched again next run.
-                logger.LogWarning(ex, "Could not fetch TSETMC instrument {InsCode} (listed in Tsetmc:ExtraInsCodes)", insCode);
+                price.Value = closing.Value;
+            }
+            else
+            {
+                db.Prices.Add(new Price { Asset = asset, Value = closing.Value, Date = date });
+                createdPrices++;
             }
         }
 
-        return extras;
+        var updatedPrices = db.ChangeTracker.Entries<Price>().Count(e => e.State == EntityState.Modified);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "TSETMC instrument discovery finished in {Elapsed}: {Codes} instruments outside the market watch, {LookedUp} looked up ({LookupsFailed} failed), {Importable} stocks and funds ({NoPrice} without a price), {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
+            TimeProvider.System.GetElapsedTime(start), codes.Count, looked.Count, lookupsFailed, importable.Count,
+            importable.Count - closings.Count, createdAssets, createdPrices, updatedPrices, skipped);
+    }
+
+    // The asset an instrument is imported as, added if it is new; null if another asset (e.g. one added by hand)
+    // already uses its symbol. Keeps the asset's TSETMC code up to date, which the NAV sync relies on.
+    private (Asset? Asset, bool Created) GetOrAddAsset(
+        AppDbContext db, Dictionary<string, Asset> assets, HashSet<string> symbols, MarketWatchItem item, string type)
+    {
+        var isin = item.Isin!;
+        var created = false;
+        if (!assets.TryGetValue(isin, out var asset))
+        {
+            var symbol = Normalize(item.Symbol).ToUpperInvariant();
+            if (symbol.Length is 0 or > 100 || !symbols.Add(symbol))
+            {
+                logger.LogDebug("Skipping {Isin}: symbol '{Symbol}' is already taken", isin, symbol);
+                return (null, false);
+            }
+
+            asset = new Asset { Symbol = symbol, Identifier = isin, Name = Truncate(Normalize(item.Name), 100), Type = type };
+            db.Assets.Add(asset);
+            assets[isin] = asset;
+            created = true;
+        }
+
+        asset.TsetmcInsCode = item.InsCode;
+        return (asset, created);
+    }
+
+    // Runs an action for every item, a few at a time. TSETMC sporadically answers 500/502 under load, and the same
+    // request usually succeeds a moment later, so by default each one is tried up to three times. Returns how many
+    // still failed.
+    private async Task<int> ForEachWithRetriesAsync<T>(
+        IEnumerable<T> items, int concurrency, Func<T, CancellationToken, Task> action, CancellationToken ct, int attempts = 3)
+    {
+        var failed = 0;
+        await Parallel.ForEachAsync(items,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, concurrency), CancellationToken = ct },
+            async (item, token) =>
+            {
+                for (var attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        await action(item, token);
+                        return;
+                    }
+                    catch (Exception) when (!token.IsCancellationRequested && attempt < attempts)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(attempt), token);
+                    }
+                    catch (Exception ex) when (!token.IsCancellationRequested)
+                    {
+                        Interlocked.Increment(ref failed);
+                        logger.LogDebug(ex, "TSETMC request for {Item} failed", item);
+                        return;
+                    }
+                }
+            });
+
+        return failed;
     }
 
     private async Task SyncEtfNavsAsync(TsetmcOptions opts, CancellationToken ct)
@@ -207,32 +339,12 @@ public sealed class TsetmcPriceSyncService(
         var start = TimeProvider.System.GetTimestamp();
 
         var navs = new ConcurrentDictionary<int, EtfNav>();
-        var failed = 0;
-        await Parallel.ForEachAsync(etfs,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, opts.NavConcurrency), CancellationToken = ct },
+        var failed = await ForEachWithRetriesAsync(etfs, opts.NavConcurrency,
             async (etf, token) =>
             {
-                // TSETMC sporadically answers 500/502 under load; the same request usually succeeds a moment later.
-                for (var attempt = 1; ; attempt++)
-                {
-                    try
-                    {
-                        if (await client.GetEtfNavAsync(etf.InsCode, token) is { } nav)
-                            navs[etf.Id] = nav;
-                        return;
-                    }
-                    catch (Exception) when (!token.IsCancellationRequested && attempt < 3)
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(attempt), token);
-                    }
-                    catch (Exception ex) when (!token.IsCancellationRequested)
-                    {
-                        Interlocked.Increment(ref failed);
-                        logger.LogDebug(ex, "Could not fetch NAV for asset {AssetId}", etf.Id);
-                        return;
-                    }
-                }
-            });
+                if (await client.GetEtfNavAsync(etf.InsCode, token) is { } nav)
+                    navs[etf.Id] = nav;
+            }, ct);
 
         // A NAV is only attached to the price row of the same trading day; it is never carried over to another day.
         var assetIds = navs.Keys.ToList();
@@ -254,19 +366,20 @@ public sealed class TsetmcPriceSyncService(
             TimeProvider.System.GetElapsedTime(start), navs.Count, etfs.Count, updated, failed);
     }
 
-    /// <summary>Stocks are main shares on TSE/IFB/base market; ETFs are exchange-traded funds (sector 68).</summary>
-    private static string? Classify(MarketWatchItem item, bool listedByHand = false)
+    /// <summary>
+    /// The asset type an instrument is imported as, from its ISIN alone: ETFs are exchange-traded fund units (IRT),
+    /// stocks are main shares on TSE/IFB/base market (IRO1/3/5/7). The sector code isn't used: it agrees for everything
+    /// in the market watch, but TSETMC files some project funds under their project's industry instead of sector 68
+    /// (پرند is in sector 40, electricity supply).
+    /// </summary>
+    private static string? Classify(string? isin)
     {
         // ISINs ending in 0001 are the primary instrument; other suffixes are rights, unit classes, etc.
-        if (item.Isin is not { Length: 12 } isin || !isin.EndsWith("0001", StringComparison.Ordinal) || string.IsNullOrEmpty(item.InsCode))
+        if (isin is not { Length: 12 } || !isin.EndsWith("0001", StringComparison.Ordinal))
             return null;
-
-        // An instrument listed by hand is a fund by its ISIN alone (IRT is fund units), since TSETMC files some project
-        // funds under their project's industry instead of sector 68: پرند is in sector 40, electricity supply.
-        var isFund = item.SectorCode?.Trim() == "68" || (listedByHand && isin.StartsWith("IRT", StringComparison.Ordinal));
-        if (isFund && isin.StartsWith("IRT", StringComparison.Ordinal))
+        if (isin.StartsWith("IRT", StringComparison.Ordinal))
             return EtfType;
-        if (!isFund && isin.StartsWith("IRO", StringComparison.Ordinal) && isin[3] is '1' or '3' or '5' or '7')
+        if (isin.StartsWith("IRO", StringComparison.Ordinal) && isin[3] is '1' or '3' or '5' or '7')
             return StockType;
 
         return null;
@@ -277,4 +390,6 @@ public sealed class TsetmcPriceSyncService(
 
     // TSETMC uses Arabic ي/ك; store Persian ی/ک so searches typed on a Persian keyboard match.
     private static string Normalize(string? text) => (text ?? string.Empty).Replace('ي', 'ی').Replace('ك', 'ک').Trim();
+
+    private static string Truncate(string text, int length) => text.Length > length ? text[..length] : text;
 }
