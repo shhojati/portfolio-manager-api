@@ -40,4 +40,4 @@ jobs:
       - name: Deploy to Liara
         env:
           LIARA_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
-        run: liara deploy --api-token "$LIARA_TOKEN" --dockerfile Dockerfile.liara --no-app-logs
+        run: liara deploy --api-token "$LIARA_TOKEN" --dockerfile Dockerfile.liara --no-app-logs --debug
