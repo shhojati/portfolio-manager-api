@@ -1,0 +1,47 @@
+name: Liara app logs
+
+# Prints the running app's logs from Liara, for checking on the server from a network that can't reach Liara.
+# The repository is public and any signed-in GitHub user can read job logs, so only lines matching the filter are
+# printed (by default the price sync jobs' lines, which hold no user data), never the whole log.
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: How far back to fetch, e.g. "2 hours ago" or "1 day ago"
+        default: 2 hours ago
+      filter:
+        description: Extended regex for the log lines to print (the categories, e.g. "ImePriceSyncService")
+        default: "PriceSyncService|fail: |crit: "
+      context:
+        description: Lines to print after each match (the message, and the start of an exception)
+        default: "3"
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install Liara CLI
+        run: npm install -g @liara/cli@9
+
+      # The app name comes from liara.json. Without --follow the CLI prints the logs and exits; timeout guards against it
+      # hanging on a bad connection, as deploys sometimes do.
+      - name: Fetch logs
+        env:
+          LIARA_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
+          SINCE: ${{ inputs.since }}
+          FILTER: ${{ inputs.filter }}
+          CONTEXT: ${{ inputs.context }}
+        run: |
+          app=$(node -p "require('./liara.json').app")
+          timeout 300 liara logs --api-token "$LIARA_TOKEN" --app "$app" --since "$SINCE" --timestamps > app.log
+          echo "Fetched $(wc -l < app.log) lines since $SINCE; showing lines matching: $FILTER"
+          grep -E -A "$CONTEXT" -e "$FILTER" app.log || echo "No matching lines."
