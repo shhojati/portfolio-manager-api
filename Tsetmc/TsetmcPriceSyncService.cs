@@ -7,8 +7,8 @@ using PortfolioManager.Api.Models;
 namespace PortfolioManager.Api.Tsetmc;
 
 /// <summary>
-/// Background job that imports every Tehran Stock Exchange / Farabourse stock and ETF as an
-/// <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading day up to date
+/// Background job that imports every Tehran Stock Exchange / Farabourse stock and ETF, plus the instruments listed in
+/// <see cref="TsetmcOptions.ExtraInsCodes"/> (e.g. suspended Energy Exchange funds), as an <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading day up to date
 /// (closing price, plus redemption NAV for ETFs).
 /// </summary>
 public sealed class TsetmcPriceSyncService(
@@ -62,7 +62,7 @@ public sealed class TsetmcPriceSyncService(
                 try
                 {
                     if (syncPrices)
-                        await SyncPricesAsync(stoppingToken);
+                        await SyncPricesAsync(opts, stoppingToken);
 
                     if (syncNavs)
                     {
@@ -96,7 +96,7 @@ public sealed class TsetmcPriceSyncService(
         return time >= opts.MarketOpen && time <= until;
     }
 
-    private async Task SyncPricesAsync(CancellationToken ct)
+    private async Task SyncPricesAsync(TsetmcOptions opts, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var client = scope.ServiceProvider.GetRequiredService<TsetmcClient>();
@@ -109,6 +109,9 @@ public sealed class TsetmcPriceSyncService(
             ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tehran));
         var date = ToPriceDate(tradingDay);
         var items = await client.GetMarketWatchAsync(ct);
+        var extras = await GetExtraInstrumentsAsync(client, opts, items, ct);
+        var instruments = items.Select(i => (Item: i, Type: Classify(i)))
+            .Concat(extras.Select(i => (Item: i, Type: Classify(i, listedByHand: true))));
 
         var assets = await db.Assets.ToDictionaryAsync(a => a.Identifier, ct);
         var symbols = assets.Values.Select(a => a.Symbol).ToHashSet();
@@ -117,16 +120,16 @@ public sealed class TsetmcPriceSyncService(
             .ToDictionary(g => g.Key, g => g.First());
 
         int createdAssets = 0, createdPrices = 0, skipped = 0;
-        foreach (var item in items)
+        foreach (var (item, classified) in instruments)
         {
-            if (Classify(item) is not { } type || item.ClosingPrice <= 0)
+            if (classified is not { } type || item.ClosingPrice <= 0)
                 continue;
 
             var isin = item.Isin!;
             if (!assets.TryGetValue(isin, out var asset))
             {
                 var symbol = Normalize(item.Symbol).ToUpperInvariant();
-                if (symbol.Length is 0 or > 20 || !symbols.Add(symbol))
+                if (symbol.Length is 0 or > 100 || !symbols.Add(symbol))
                 {
                     // Another asset (e.g. one added by hand) already uses this symbol.
                     skipped++;
@@ -158,8 +161,35 @@ public sealed class TsetmcPriceSyncService(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "TSETMC price sync finished in {Elapsed} for trading day {Date:yyyy-MM-dd}: {Instruments} instruments received, {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
-            TimeProvider.System.GetElapsedTime(start), tradingDay, items.Count, createdAssets, createdPrices, updatedPrices, skipped);
+            "TSETMC price sync finished in {Elapsed} for trading day {Date:yyyy-MM-dd}: {Instruments} instruments received ({Extra} listed by hand), {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
+            TimeProvider.System.GetElapsedTime(start), tradingDay, items.Count + extras.Count, extras.Count, createdAssets, createdPrices, updatedPrices, skipped);
+    }
+
+    // Fetches the instruments in ExtraInsCodes one by one, leaving out any the market watch already returned.
+    private async Task<List<MarketWatchItem>> GetExtraInstrumentsAsync(
+        TsetmcClient client, TsetmcOptions opts, IReadOnlyList<MarketWatchItem> marketWatch, CancellationToken ct)
+    {
+        var listed = marketWatch.Select(i => i.InsCode).ToHashSet();
+        var extras = new List<MarketWatchItem>();
+        foreach (var insCode in opts.ExtraInsCodes.Select(c => c.Trim()).Where(c => c.Length > 0 && !listed.Contains(c)).Distinct())
+        {
+            try
+            {
+                if (await client.GetInstrumentAsync(insCode, ct) is not { } item)
+                    logger.LogWarning("TSETMC has no instrument {InsCode} (listed in Tsetmc:ExtraInsCodes)", insCode);
+                else if (Classify(item, listedByHand: true) is null)
+                    logger.LogWarning("Not importing {InsCode} ({Isin}, listed in Tsetmc:ExtraInsCodes): it is neither a stock nor a fund", insCode, item.Isin);
+                else
+                    extras.Add(item);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // One instrument failing must not hold up the rest of the market; it is fetched again next run.
+                logger.LogWarning(ex, "Could not fetch TSETMC instrument {InsCode} (listed in Tsetmc:ExtraInsCodes)", insCode);
+            }
+        }
+
+        return extras;
     }
 
     private async Task SyncEtfNavsAsync(TsetmcOptions opts, CancellationToken ct)
@@ -225,13 +255,15 @@ public sealed class TsetmcPriceSyncService(
     }
 
     /// <summary>Stocks are main shares on TSE/IFB/base market; ETFs are exchange-traded funds (sector 68).</summary>
-    private static string? Classify(MarketWatchItem item)
+    private static string? Classify(MarketWatchItem item, bool listedByHand = false)
     {
         // ISINs ending in 0001 are the primary instrument; other suffixes are rights, unit classes, etc.
         if (item.Isin is not { Length: 12 } isin || !isin.EndsWith("0001", StringComparison.Ordinal) || string.IsNullOrEmpty(item.InsCode))
             return null;
 
-        var isFund = item.SectorCode?.Trim() == "68";
+        // An instrument listed by hand is a fund by its ISIN alone (IRT is fund units), since TSETMC files some project
+        // funds under their project's industry instead of sector 68: پرند is in sector 40, electricity supply.
+        var isFund = item.SectorCode?.Trim() == "68" || (listedByHand && isin.StartsWith("IRT", StringComparison.Ordinal));
         if (isFund && isin.StartsWith("IRT", StringComparison.Ordinal))
             return EtfType;
         if (!isFund && isin.StartsWith("IRO", StringComparison.Ordinal) && isin[3] is '1' or '3' or '5' or '7')

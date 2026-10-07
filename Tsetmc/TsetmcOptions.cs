@@ -19,6 +19,14 @@ public sealed class TsetmcOptions
     public TimeOnly MarketOpen { get; set; } = new(8, 45);
     public TimeOnly MarketClose { get; set; } = new(13, 0);
 
+    /// <summary>
+    /// TSETMC instrument codes (insCode, the number in a tsetmc.com/instInfo/... link) imported on top of the market
+    /// watch. Energy Exchange instruments only show up in the market watch once their session opens that day, so a
+    /// suspended one (e.g. a project fund that hasn't traded since listing) never does. Codes the market watch did
+    /// return are ignored; each other one costs two requests per run.
+    /// </summary>
+    public string[] ExtraInsCodes { get; set; } = [];
+
     /// <summary>Also fetch ETF NAVs (one request per ETF, so on a slower schedule than prices).</summary>
     public bool SyncEtfNav { get; set; } = true;
     public TimeSpan NavInterval { get; set; } = TimeSpan.FromHours(1);

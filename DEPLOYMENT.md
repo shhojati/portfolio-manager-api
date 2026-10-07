@@ -214,6 +214,7 @@ users already exist and these variables are not needed at all.
 | `Tsetmc__MarketOpen` / `Tsetmc__MarketClose` | `08:45` / `13:00` | TSETMC active hours (Tehran) |
 | `Tsetmc__SyncEtfNav`, `Tsetmc__NavInterval`, `Tsetmc__NavClose`, `Tsetmc__NavConcurrency` | `true`, `01:00:00`, `18:30`, `4` | ETF NAV sync |
 | `Tsetmc__RunOnStartup` | `true` | Run one TSETMC sync at startup even outside market hours |
+| `Tsetmc__ExtraInsCodes__0`, `__1`, ... | `32232147777592560` (نور), `25127367596921633` (پرند) | TSETMC instrument codes (the number in a `tsetmc.com/instInfo/...` link) imported on top of the market watch. Energy Exchange instruments only appear in the market watch once their session opens that day, so suspended ones (such as these two project funds) are never imported without this. Same index rules as `Tsetmc:TradingDays` above |
 | `Tgju__MaxQuoteAge` | `7.00:00:00` | Ignore tgju quotes older than this |
 | `Fipiran__MaxNavAge` | `7.00:00:00` | Ignore funds whose latest NAV is older than this |
 | `Logging__LogLevel__Default` | `Information` | Log verbosity (`Debug`, `Information`, `Warning`, `Error`) |

@@ -29,6 +29,21 @@ public sealed class TsetmcClient(HttpClient http)
         return ParseDate(response?.MarketOverview?.MarketActivityDEven ?? 0);
     }
 
+    /// <summary>
+    /// One instrument's latest closing price, in the same shape as a market watch item, or null if TSETMC doesn't know
+    /// the code. For instruments the market watch leaves out, such as suspended ones on the Iran Energy Exchange.
+    /// </summary>
+    public async Task<MarketWatchItem?> GetInstrumentAsync(string insCode, CancellationToken ct)
+    {
+        var code = Uri.EscapeDataString(insCode);
+        var info = (await http.GetFromJsonAsync<InstrumentInfoResponse>($"api/Instrument/GetInstrumentInfo/{code}", ct))?.InstrumentInfo;
+        if (string.IsNullOrEmpty(info?.InstrumentId))
+            return null;
+
+        var closing = (await http.GetFromJsonAsync<ClosingPriceInfoResponse>($"api/ClosingPrice/GetClosingPriceInfo/{code}", ct))?.ClosingPriceInfo;
+        return new MarketWatchItem(insCode, info.InstrumentId, info.Symbol, info.Name, info.Sector?.Code, closing?.ClosingPrice ?? 0);
+    }
+
     /// <summary>Latest redemption NAV (NAV ابطال) of an ETF, or null if TSETMC has none.</summary>
     public async Task<EtfNav?> GetEtfNavAsync(string insCode, CancellationToken ct)
     {
@@ -49,6 +64,20 @@ public sealed class TsetmcClient(HttpClient http)
     private sealed record MarketOverviewResponse(MarketOverview? MarketOverview);
 
     private sealed record MarketOverview(int MarketActivityDEven);
+
+    private sealed record InstrumentInfoResponse(InstrumentInfo? InstrumentInfo);
+
+    private sealed record InstrumentInfo(
+        [property: JsonPropertyName("instrumentID")] string? InstrumentId,
+        [property: JsonPropertyName("lVal18AFC")] string? Symbol,
+        [property: JsonPropertyName("lVal30")] string? Name,
+        [property: JsonPropertyName("sector")] SectorInfo? Sector);
+
+    private sealed record SectorInfo([property: JsonPropertyName("cSecVal")] string? Code);
+
+    private sealed record ClosingPriceInfoResponse(ClosingPriceInfo? ClosingPriceInfo);
+
+    private sealed record ClosingPriceInfo([property: JsonPropertyName("pClosing")] decimal ClosingPrice);
 
     private sealed record EtfResponse(EtfInfo? Etf);
 
