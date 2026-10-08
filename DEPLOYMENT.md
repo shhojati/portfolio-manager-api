@@ -77,7 +77,7 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
 |---|---|---|
 | **Admin** (role `Admin`) | Signs in on `/login.html`; gets an HttpOnly, Secure, SameSite=Strict cookie `pm.session` | Everything: backoffice, all API endpoints including writes, user management |
 | **API client** (role `ApiClient`) | `POST /api/auth/token` with username/password → bearer access token (1 h) + refresh token (14 days); `POST /api/auth/refresh` renews | Read-only API access; cannot sign in to the backoffice |
-| **Anonymous** | Nothing | Only `GET /api/assets/search?q=...` and `GET /api/prices/latest?identifiers=...` (max 100 identifiers) |
+| **Anonymous** | Nothing | Only `GET /api/assets/search?q=...`, `GET /api/assets/by-identifiers?identifiers=...`, `GET /api/assets/{id}/prices`, `GET /api/prices/latest?identifiers=...` (max 100 identifiers) and `GET /api/prices/history?identifiers=...&from=YYYY-MM-DD&to=YYYY-MM-DD` (each asset's price on every day of the range; max 100 identifiers, 3660 days and 200,000 prices) |
 
 Everything else (other `/api/*` endpoints, `/ws`) returns `401` without authentication and `403` for
 the wrong role. The WebSocket accepts the cookie, or a token as `?access_token=<token>` (browsers can't
