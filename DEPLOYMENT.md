@@ -78,6 +78,22 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
 | **Admin** (role `Admin`) | Signs in on `/login.html`; gets an HttpOnly, Secure, SameSite=Strict cookie `pm.session` | Everything: backoffice, all API endpoints including writes, user management |
 | **API client** (role `ApiClient`) | `POST /api/auth/token` with username/password → bearer access token (1 h) + refresh token (14 days); `POST /api/auth/refresh` renews | Read-only API access; cannot sign in to the backoffice |
 | **Anonymous** | Nothing | Only `GET /api/assets/search?q=...`, `GET /api/assets/by-identifiers?identifiers=...`, `GET /api/assets/{id}/prices`, `GET /api/prices/latest?identifiers=...` (max 100 identifiers) and `GET /api/prices/history?identifiers=...&from=YYYY-MM-DD&to=YYYY-MM-DD` (each asset's price on every day of the range; max 100 identifiers, 3660 days and 200,000 prices) |
+| **Mobile app install** | Optional `X-Install-Token` header with a token from `POST /api/install` | Same as anonymous. The token is not a sign-in and grants no access; it only gives the install its own rate limit budget (see below) |
+
+#### Install tokens
+
+The mobile app doesn't collect any personal data, but should not share one per-IP budget with every
+phone behind the same mobile carrier address. So each install calls `POST /api/install` (no body, no
+sign-in) once and gets `{ "token": "...", "expiresAt": "..." }`:
+
+- The token holds only a random id and its expiry (`Install__TokenLifetime`, 180 days), encrypted
+  with the data protection keys. Nothing is stored on the server and nothing about the caller is sent.
+- The app sends it as `X-Install-Token` on every request and gets a new one (with a new id) before it
+  expires.
+- A token that can't be read (forged, expired, or sealed with keys that were lost) is not refused: the
+  request counts as anonymous, and the response carries `X-Install-Token: invalid` so the app asks for a
+  new one. The header is listed in CORS `Access-Control-Expose-Headers` for browser apps.
+- Requests without the header (older app versions, other callers) work exactly as before.
 
 Everything else (other `/api/*` endpoints, `/ws`) returns `401` without authentication and `403` for
 the wrong role. The WebSocket accepts the cookie, or a token as `?access_token=<token>` (browsers can't
@@ -95,8 +111,18 @@ Fixed window, per minute by default. Over the limit the API answers `429 Too Man
 |---|---|---|---|
 | `ApiClient` | Signed-in API clients | User | 120 / min |
 | `Admin` | Signed-in admins (the UI makes several calls per page) | User | 600 / min |
-| `Anonymous` | Requests without credentials (public endpoints and rejected requests share it) | Client IP | 30 / min |
+| `Anonymous` | Requests without credentials or install token (public endpoints and rejected requests share it) | Client IP | 30 / min |
+| `Installation` | Anonymous requests with a valid install token (the mobile app) | Install token | 120 / min |
+| `InstallRegistration` | `POST /api/install` (new install tokens) | Client IP | 30 / 10 min |
+| `PerIp` | **Every** request without a sign-in, on top of the budget above: caps collecting install tokens to multiply the budget | Client IP | 600 / min |
 | `Auth` | Login, token, refresh, change password (password guessing protection) | Client IP | 10 / min |
+
+`InstallRegistration` and `PerIp` are high on purpose: Iranian mobile carriers put many phones behind
+one IP address (CGNAT). Lower them only if you see abuse.
+
+The counters live in the app's memory: a restart starts every window afresh, and running more than
+one instance of the app would give each instance its own counters (multiplying every limit). With
+SQLite there is only ever one instance, so no shared store (Redis) is needed.
 
 Per-IP limits depend on the app seeing the **real client IP**. Behind the reverse proxy that only works
 because `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` (set in the Dockerfile) makes the app trust the
@@ -105,9 +131,11 @@ proxy alone, which is why it is bound to `127.0.0.1`. See [section 13](#13-rules
 
 ### Data protection keys
 
-ASP.NET Core encrypts the session cookie and API tokens with keys stored in `/app/data/keys`
-(`DataProtection__KeysPath`). If that folder is lost or not persisted, every admin is signed out and
-every API token/refresh token becomes invalid (clients must request new tokens). Nothing else breaks.
+ASP.NET Core encrypts the session cookie, API tokens and install tokens with keys stored in
+`/app/data/keys` (`DataProtection__KeysPath`). If that folder is lost or not persisted, every admin is
+signed out and every API token/refresh token becomes invalid (clients must request new tokens). The
+mobile app notices its install token is invalid and gets a new one by itself, spread over a minute so
+the installs behind one address don't all hit `InstallRegistration` at once. Nothing else breaks.
 Keep it in backups together with the database.
 
 ### Background price sync
@@ -202,7 +230,12 @@ users already exist and these variables are not needed at all.
 | `RateLimiting__Anonymous__Window` | `00:01:00` | Window length |
 | `RateLimiting__ApiClient__PermitLimit` | `120` | Per API-client user |
 | `RateLimiting__Admin__PermitLimit` | `600` | Per admin user |
+| `RateLimiting__Installation__PermitLimit` | `120` | Per mobile app install (install token) |
+| `RateLimiting__InstallRegistration__PermitLimit` | `30` | New install tokens per IP per window |
+| `RateLimiting__InstallRegistration__Window` | `00:10:00` | Window length for new install tokens |
+| `RateLimiting__PerIp__PermitLimit` | `600` | Cap on all requests without a sign-in from one IP |
 | `RateLimiting__Auth__PermitLimit` | `10` | Password checks per IP |
+| `Install__TokenLifetime` | `180.00:00:00` | How long an install token is accepted |
 | `Auth__SessionLifetime` | `08:00:00` | Admin session length (sliding: renewed while in use) |
 | `Auth__AccessTokenLifetime` | `01:00:00` | API access token lifetime |
 | `Auth__RefreshTokenLifetime` | `14.00:00:00` | API refresh token lifetime |
@@ -834,3 +867,6 @@ When operating this deployment on someone's behalf:
 8. **Prefer configuration over code changes.** Rate limits, lifetimes, CORS origins, Swagger and sync
    schedules are all settable through environment variables (section 3.4).
 9. **Admin role = full access, ApiClient = read-only.** Give API consumers `ApiClient` accounts only.
+10. **Never log install ids, install tokens or client IPs**, and don't store them. The app promises its
+    users that nothing identifying is collected; install tokens exist only for rate limiting.
+11. **Run a single instance.** Rate limit counters are in memory (section 2, Rate limiting).

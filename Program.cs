@@ -23,7 +23,9 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
         allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase) ||
         (builder.Environment.IsDevelopment() && Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.IsLoopback))
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    // Lets a browser app see that its install token was refused (see Auth/InstallTokens.cs).
+    .WithExposedHeaders(InstallTokenService.HeaderName)));
 
 // Real-time push: the hub is both a singleton (for publishing) and a hosted service (for sending).
 builder.Services.AddSingleton<WebSocketHub>();
@@ -93,6 +95,10 @@ builder.Services.AddHostedService<ImePriceSyncService>();
 builder.AddPortfolioAuth();
 builder.AddPortfolioRateLimiting();
 
+// Anonymous install tokens give each install of the mobile app a rate limit budget of its own.
+builder.Services.Configure<InstallTokenOptions>(builder.Configuration.GetSection(InstallTokenOptions.SectionName));
+builder.Services.AddSingleton<InstallTokenService>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -150,6 +156,7 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache"
 });
 
+app.UseInstallTokens();
 app.UseRateLimiter();
 app.UseAuthorization();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
