@@ -23,8 +23,9 @@ public sealed record HistoryAsset(int Id, string Identifier, string Type, string
 /// started, so those are fetched per asset, all at once, the first time a day before its first stored price is asked
 /// for; <see cref="Asset.HistoryLoadedAt"/> marks it as done. Only days before its first stored price are added, so
 /// they never overlap with the sync job's.</item>
-/// <item>FIPIRAN answers with every fund's NAV as of one day, so it is fetched per day, only the days asked for, and each
-/// one is kept in <see cref="AppDbContext.FipiranDays"/>. The last few days are left to the FIPIRAN sync job.</item>
+/// <item>FIPIRAN answers with every fund's NAV as of one day, so it is fetched per day, only the days asked for (one a
+/// week over a range longer than two months), and each one is kept in <see cref="AppDbContext.FipiranDays"/>. The last
+/// few days are left to the FIPIRAN sync job.</item>
 /// </list>
 /// Fetches run in the background, a few per source at a time, so they go on after a request stops waiting for them, and
 /// requests for the same asset or day share one fetch. A failed one is tried again after
@@ -40,6 +41,11 @@ public sealed class PriceHistoryBackfill(
 
     // Funds publish a day or more late, so the FIPIRAN sync job, which dates each NAV by its own day, has these.
     private const int FipiranRecentDays = 3;
+
+    // Over a longer range (a chart), FIPIRAN is asked for one day a week rather than every day: a fund's NAV moves
+    // slowly, and a year then takes 52 requests rather than 365. Days asked for directly, like a trade's, are exact.
+    private const int FipiranDailyRange = 62;
+    private const int FipiranWeek = 7;
 
     // Fetches in progress, by asset or day, so concurrent requests share them.
     private readonly ConcurrentDictionary<string, Lazy<Task>> _running = new();
@@ -79,13 +85,19 @@ public sealed class PriceHistoryBackfill(
             var last = to < today.AddDays(-FipiranRecentDays) ? to : today.AddDays(-FipiranRecentDays);
             if (first <= last)
             {
+                // Weekly days are on one grid, so every range shares them, and it starts on or before the range's
+                // first day, so the range starts with a price.
+                var weekly = last.DayNumber - first.DayNumber + 1 > FipiranDailyRange;
+                if (weekly)
+                    first = first.AddDays(-(first.DayNumber % FipiranWeek));
+
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var fetched = (await db.FipiranDays.Where(d => d.Date >= first && d.Date <= last).Select(d => d.Date).ToListAsync(ct)).ToHashSet();
                 // The latest days first, since a request waits for the earliest ones the least.
                 for (var day = last; day >= first; day = day.AddDays(-1))
                 {
-                    if (fetched.Contains(day))
+                    if (fetched.Contains(day) || (weekly && day != last && day.DayNumber % FipiranWeek != 0))
                         continue;
                     var d = day;
                     fetches.Add(Run($"{PriceSource.Fipiran}:{d:yyyy-MM-dd}", PriceSource.Fipiran, token => LoadFipiranDayAsync(d, token)));

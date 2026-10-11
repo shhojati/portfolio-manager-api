@@ -163,7 +163,7 @@ them as ordinary prices, so each is fetched only once (`History/PriceHistoryBack
 | Bitpin | The coin's daily candles since `PriceHistory__EarliestDate`, one request | `Assets.HistoryLoadedAt` |
 | tgju | The instrument's whole daily history from `api.tgju.org` (plus the dollar's, for world metals) | `Assets.HistoryLoadedAt` |
 | IME | The certificate's trades since 1401/12, a few pages | `Assets.HistoryLoadedAt` |
-| FIPIRAN | Every fund's NAV as of one day, one request per day asked for (not the last 3 days, which the sync job has) | `FipiranDays` table |
+| FIPIRAN | Every fund's NAV as of one day, one request per day asked for; over a range longer than two months (a chart), one day a week. Not the last 3 days, which the sync job has | `FipiranDays` table |
 
 - Only days before the asset's first stored price are added, so they never overlap with the sync job's.
 - Fetches run in the background, 2 at a time per source (FIPIRAN 1), and requests for the same asset or
