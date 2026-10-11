@@ -18,7 +18,7 @@ public sealed partial class FipiranPriceSyncService(
 {
     public const string FundType = "Fund";
 
-    private const string IssuanceAndCancellation = "IssuanceAndCancellation";
+    public const string IssuanceAndCancellation = "IssuanceAndCancellation";
 
     private static readonly TimeZoneInfo Tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
 
@@ -160,7 +160,7 @@ public sealed partial class FipiranPriceSyncService(
     }
 
     // Funds have no ticker or ISIN, so the identifier comes from the SEO registration number, e.g. "FUND-10789".
-    private static string Code(string regNo) => $"FUND-{regNo.Trim()}";
+    public static string Code(string regNo) => $"FUND-{regNo.Trim()}";
 
     // FIPIRAN uses Arabic ي/ك in some names; store Persian ی/ک so searches typed on a Persian keyboard match. Its names
     // mostly leave out «صندوق سرمایه‌گذاری» («مشترک پیشرو مفید»), but a few keep it or carry stray characters from the

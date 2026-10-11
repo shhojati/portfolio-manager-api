@@ -65,8 +65,7 @@ public sealed class ImePriceSyncService(
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tehran));
         var from = today.AddDays(-Math.Max(0, opts.LookbackDays));
 
-        // Each price is dated by the trading day it is for. The settlement price is the exchange's official price for
-        // the day; the last trade's is the fallback for a day IME hasn't set one for yet.
+        // Each price is dated by the trading day it is for (see ImeCertificates.DailyPrices).
         var prices = new List<(ImeCertificate Certificate, decimal Value, DateTime Date)>();
         int failed = 0;
         foreach (var certificate in ImeCertificates.All)
@@ -83,12 +82,8 @@ public sealed class ImePriceSyncService(
                 continue;
             }
 
-            prices.AddRange(trades
-                .Where(t => t.ContractCode is null || t.ContractCode.Trim() == certificate.Code)
-                .Select(t => (Trade: t, Value: t.TodaySettlementPrice is > 0 ? t.TodaySettlementPrice.Value : t.LastPrice ?? 0))
-                .Where(t => t.Value > 0 && t.Trade.Date is not null)
-                .Select(t => (certificate, t.Value, DateTime.SpecifyKind(t.Trade.Date!.Value.Date, DateTimeKind.Utc)))
-                .DistinctBy(p => p.Item3));
+            prices.AddRange(ImeCertificates.DailyPrices(certificate, trades)
+                .Select(p => (certificate, p.Value, p.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc))));
         }
 
         if (failed == ImeCertificates.All.Count)

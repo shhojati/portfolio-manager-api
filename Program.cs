@@ -6,6 +6,7 @@ using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Fipiran;
+using PortfolioManager.Api.History;
 using PortfolioManager.Api.Ime;
 using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
@@ -90,6 +91,10 @@ builder.Services.AddHttpClient<ImeClient>(http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<ImePriceSyncService>();
+
+// Past prices fetched from the same sources, on demand, when the history endpoint asks for days before what's stored.
+builder.Services.Configure<PriceHistoryOptions>(builder.Configuration.GetSection(PriceHistoryOptions.SectionName));
+builder.Services.AddSingleton<PriceHistoryBackfill>();
 
 // Admins sign in with a cookie, API clients with a bearer token; see Auth/AuthSetup.cs.
 builder.AddPortfolioAuth();

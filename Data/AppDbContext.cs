@@ -10,6 +10,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Price> Prices => Set<Price>();
     public DbSet<User> Users => Set<User>();
     public DbSet<TsetmcInstrument> TsetmcInstruments => Set<TsetmcInstrument>();
+    public DbSet<FipiranDay> FipiranDays => Set<FipiranDay>();
+
+    /// <summary>
+    /// Whether this context's saves are pushed to WebSocket clients (see RealtimeBroadcastInterceptor). Turned off
+    /// for past prices fetched in bulk, which are thousands of rows nobody is watching for.
+    /// </summary>
+    public bool BroadcastChanges { get; set; } = true;
 
     // SQLite has no timezone-aware type, so store every DateTime as UTC and
     // mark it as UTC when reading it back.
@@ -62,5 +69,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(i => i.Symbol).HasMaxLength(100);
             e.Property(i => i.Name).HasMaxLength(100);
         });
+
+        modelBuilder.Entity<FipiranDay>(e => e.HasKey(d => d.Date));
     }
 }

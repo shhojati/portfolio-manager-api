@@ -18,6 +18,19 @@ public sealed class FipiranClient(HttpClient http)
         return page?.Items ?? [];
     }
 
+    /// <summary>
+    /// Every fund's NAVs as of a past day, in a single request: each fund's last NAVs on or before that day, dated by
+    /// their own NAV date. The compare page sends its date filter the same way.
+    /// </summary>
+    public async Task<IReadOnlyList<FundItem>> GetFundsAsync(DateOnly asOf, CancellationToken ct)
+    {
+        using var response = await http.PostAsJsonAsync("services/fund/fundcompare",
+            new { date = $"{asOf.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}T00:00:00.000Z" }, ct);
+        response.EnsureSuccessStatusCode();
+        var page = await response.Content.ReadFromJsonAsync<FundComparePage>(ct);
+        return page?.Items ?? [];
+    }
+
     private sealed record FundComparePage(List<FundItem>? Items);
 }
 

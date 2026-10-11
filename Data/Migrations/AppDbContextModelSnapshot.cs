@@ -26,6 +26,9 @@ namespace PortfolioManager.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("HistoryLoadedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Identifier")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -63,6 +66,19 @@ namespace PortfolioManager.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Assets");
+                });
+
+            modelBuilder.Entity("PortfolioManager.Api.Models.FipiranDay", b =>
+                {
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FetchedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Date");
+
+                    b.ToTable("FipiranDays");
                 });
 
             modelBuilder.Entity("PortfolioManager.Api.Models.Price", b =>

@@ -65,6 +65,23 @@ public sealed class TsetmcClient(HttpClient http)
         return new ClosingPrice(date, info.ClosingPrice);
     }
 
+    /// <summary>
+    /// An instrument's closing price on every day it traded since it was listed (one request, a few thousand rows for
+    /// an old stock), oldest first. These are the prices of the day, not adjusted for later capital increases.
+    /// </summary>
+    public async Task<IReadOnlyList<ClosingPrice>> GetDailyClosingPricesAsync(string insCode, CancellationToken ct)
+    {
+        // The last segment is how many days back; 0 means all of them.
+        var response = await http.GetFromJsonAsync<ClosingPriceDailyResponse>(
+            $"api/ClosingPrice/GetClosingPriceDailyList/{Uri.EscapeDataString(insCode)}/0", ct);
+        return (response?.ClosingPriceDaily ?? [])
+            .Where(d => d.ClosingPrice > 0)
+            .Select(d => ParseDate(d.DEven) is { } date ? new ClosingPrice(date, d.ClosingPrice) : null)
+            .OfType<ClosingPrice>()
+            .OrderBy(d => d.LastTradeDate)
+            .ToList();
+    }
+
     /// <summary>Latest redemption NAV (NAV ابطال) of an ETF, or null if TSETMC has none.</summary>
     public async Task<EtfNav?> GetEtfNavAsync(string insCode, CancellationToken ct)
     {
@@ -81,6 +98,12 @@ public sealed class TsetmcClient(HttpClient http)
         DateOnly.TryParseExact(dEven.ToString(CultureInfo.InvariantCulture), "yyyyMMdd", out var date) ? date : null;
 
     private sealed record MarketWatchResponse(List<MarketWatchItem>? MarketWatch);
+
+    private sealed record ClosingPriceDailyResponse(List<ClosingPriceDaily>? ClosingPriceDaily);
+
+    private sealed record ClosingPriceDaily(
+        [property: JsonPropertyName("dEven")] int DEven,
+        [property: JsonPropertyName("pClosing")] decimal ClosingPrice);
 
     private sealed record MarketOverviewResponse(MarketOverview? MarketOverview);
 

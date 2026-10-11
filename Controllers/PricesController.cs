@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Dtos;
+using PortfolioManager.Api.History;
 using PortfolioManager.Api.Models;
 using PortfolioManager.Api.RateLimiting;
 
@@ -14,7 +15,7 @@ namespace PortfolioManager.Api.Controllers;
 [Route("api/[controller]")]
 [Authorize(Roles = Roles.Readers)]
 [EnableRateLimiting(RateLimitPolicies.Api)]
-public class PricesController(AppDbContext db) : ControllerBase
+public class PricesController(AppDbContext db, PriceHistoryBackfill backfill) : ControllerBase
 {
     // Caps the work one (possibly anonymous) request can cause.
     private const int MaxIdentifiers = 100;
@@ -71,6 +72,9 @@ public class PricesController(AppDbContext db) : ControllerBase
     /// One price per asset for each day from <c>from</c> to <c>to</c> (default: today, Tehran time): the last one
     /// recorded that day; on a day without one, like a market holiday, the last one recorded before it; and 0 before
     /// the asset's first price. Identifiers with no matching asset are omitted.
+    /// Past prices that aren't stored yet are fetched from the asset's source first (see PriceHistoryBackfill), waiting
+    /// a few seconds at most: if they aren't all in by then, the answer has what is stored and asking again shortly after
+    /// gets the rest.
     /// Public: no sign-in needed, rate limited per IP; at most 100 identifiers and 3660 days, and 200,000 prices in
     /// all, per request.
     /// </remarks>
@@ -79,7 +83,8 @@ public class PricesController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<List<AssetPriceHistoryDto>>> GetHistory(
         [FromQuery] List<string> identifiers,
         [FromQuery] DateOnly from,
-        [FromQuery] DateOnly? to)
+        [FromQuery] DateOnly? to,
+        CancellationToken ct)
     {
         var ids = identifiers.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct().ToList();
         if (ids.Count == 0)
@@ -98,9 +103,11 @@ public class PricesController(AppDbContext db) : ControllerBase
 
         var assets = await db.Assets
             .Where(a => ids.Contains(a.Identifier))
-            .Select(a => new { a.Id, a.Identifier })
-            .ToListAsync();
+            .Select(a => new HistoryAsset(a.Id, a.Identifier, a.Type, a.TsetmcInsCode, a.HistoryLoadedAt, a.Prices.Min(p => (DateTime?)p.Date)))
+            .ToListAsync(ct);
         var assetIds = assets.Select(a => a.Id).ToList();
+
+        await backfill.EnsureAsync(assets, from, last, ct);
 
         // Prices are dated by their Tehran day, stored as midnight UTC.
         var start = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);

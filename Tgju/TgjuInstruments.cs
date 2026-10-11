@@ -250,4 +250,12 @@ public static class TgjuInstruments
         ["price_std"] = Currency("STN", "دوبرا سائوتومه و پرنسیپ", symbol: "دوبرای سائوتومه"),
         ["price_shp"] = Currency("SHP", "پوند سنت هلن"),
     };
+
+    // An asset's tgju key, by the type and identifier it was imported with. Declared after ByKey, which it is built from.
+    private static readonly IReadOnlyDictionary<(string Type, string Code), string> KeyByAsset = ByKey
+        .GroupBy(i => (i.Value.Type, i.Value.Code))
+        .ToDictionary(g => g.Key, g => g.First().Key);
+
+    /// <summary>tgju's key for an asset imported from it, or null if it wasn't.</summary>
+    public static string? KeyOf(string type, string identifier) => KeyByAsset.GetValueOrDefault((type, identifier));
 }

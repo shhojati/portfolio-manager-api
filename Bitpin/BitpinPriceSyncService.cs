@@ -17,8 +17,8 @@ public sealed class BitpinPriceSyncService(
 {
     public const string CryptoType = "Crypto";
 
-    private const string TomanSuffix = "_IRT";
-    private const int RialsPerToman = 10;
+    public const string TomanSuffix = "_IRT";
+    public const int RialsPerToman = 10;
 
     private static readonly TimeZoneInfo Tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
 

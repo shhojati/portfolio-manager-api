@@ -63,7 +63,8 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
                 ├─ REST API          /api/...
                 ├─ Backoffice UI     /, /login.html (from wwwroot)
                 ├─ WebSocket         /ws
-                └─ Background jobs   TSETMC, Bitpin, tgju, FIPIRAN price sync (outbound HTTPS)
+                └─ Background jobs   TSETMC, Bitpin, tgju, FIPIRAN, IME price sync, and past prices
+                                     on demand (outbound HTTPS)
                         │
                         ▼
               /app/data  ◀── bind mount ──▶  ./data on the host
@@ -77,7 +78,7 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
 |---|---|---|
 | **Admin** (role `Admin`) | Signs in on `/login.html`; gets an HttpOnly, Secure, SameSite=Strict cookie `pm.session` | Everything: backoffice, all API endpoints including writes, user management |
 | **API client** (role `ApiClient`) | `POST /api/auth/token` with username/password → bearer access token (1 h) + refresh token (14 days); `POST /api/auth/refresh` renews | Read-only API access; cannot sign in to the backoffice |
-| **Anonymous** | Nothing | Only `GET /api/assets/search?q=...`, `GET /api/assets/by-identifiers?identifiers=...`, `GET /api/assets/{id}/prices`, `GET /api/prices/latest?identifiers=...` (max 100 identifiers) and `GET /api/prices/history?identifiers=...&from=YYYY-MM-DD&to=YYYY-MM-DD` (each asset's price on every day of the range; max 100 identifiers, 3660 days and 200,000 prices) |
+| **Anonymous** | Nothing | Only `GET /api/assets/search?q=...`, `GET /api/assets/by-identifiers?identifiers=...`, `GET /api/assets/{id}/prices`, `GET /api/prices/latest?identifiers=...` (max 100 identifiers) and `GET /api/prices/history?identifiers=...&from=YYYY-MM-DD&to=YYYY-MM-DD` (each asset's price on every day of the range, fetching past prices not stored yet; max 100 identifiers, 3660 days and 200,000 prices) |
 | **Mobile app install** | Optional `X-Install-Token` header with a token from `POST /api/install` | Same as anonymous. The token is not a sign-in and grants no access; it only gives the install its own rate limit budget (see below) |
 
 #### Install tokens
@@ -149,6 +150,31 @@ Keep it in backups together with the database.
 
 The VPS must be able to reach these hosts. Some Iranian services block or throttle foreign IPs; check
 with `curl` before migrating (see [section 5.6](#56-check-outbound-access-to-the-price-sources)).
+
+### Past prices on demand
+
+The sync jobs only store prices from the day they first ran. When `GET /api/prices/history` asks for
+days before an asset's first stored price, the server fetches them from the same source and stores
+them as ordinary prices, so each is fetched only once (`History/PriceHistoryBackfill.cs`):
+
+| Source | What is fetched | Marked as done in |
+|---|---|---|
+| TSETMC | The instrument's whole daily history (closing prices), one request | `Assets.HistoryLoadedAt` |
+| Bitpin | The coin's daily candles since `PriceHistory__EarliestDate`, one request | `Assets.HistoryLoadedAt` |
+| tgju | The instrument's whole daily history from `api.tgju.org` (plus the dollar's, for world metals) | `Assets.HistoryLoadedAt` |
+| IME | The certificate's trades since 1401/12, a few pages | `Assets.HistoryLoadedAt` |
+| FIPIRAN | Every fund's NAV as of one day, one request per day asked for (not the last 3 days, which the sync job has) | `FipiranDays` table |
+
+- Only days before the asset's first stored price are added, so they never overlap with the sync job's.
+- Fetches run in the background, 2 at a time per source (FIPIRAN 1), and requests for the same asset or
+  day share one fetch. A request waits up to `PriceHistory__WaitTimeout` (5 s), then answers with what
+  is stored; asking again a little later gets the rest. A failed fetch is retried after
+  `PriceHistory__RetryAfter` (15 min); the log says `Fetching past prices for ... failed`.
+- These prices are not pushed over the WebSocket, and carry no NAV.
+- tgju history comes from `api.tgju.org`, not the live feed's hosts; check it with the step 4 of
+  [section 9](#9-verify-the-deployment).
+- To fetch an asset again, clear its mark: `UPDATE Assets SET HistoryLoadedAt = NULL WHERE Identifier = '...';`
+  (it then only adds days still missing before its first stored price).
 
 ---
 
@@ -252,6 +278,10 @@ users already exist and these variables are not needed at all.
 | `Tgju__MaxQuoteAge` | `7.00:00:00` | Ignore tgju quotes older than this |
 | `Fipiran__MaxNavAge` | `7.00:00:00` | Ignore funds whose latest NAV is older than this |
 | `Ime__LookbackDays` | `7` | Days of IME gold/silver certificate prices fetched each run; raise it once to import older prices (IME has them from 1401/12). IME only answers Iranian IPs, so this job fails on a server outside Iran |
+| `PriceHistory__Enabled` | `true` | Fetch past prices not stored yet when the history endpoint asks for them (section 2, Past prices on demand) |
+| `PriceHistory__WaitTimeout`, `PriceHistory__RetryAfter` | `00:00:05`, `00:15:00` | How long a history request waits for those fetches; how long until a failed one is tried again |
+| `PriceHistory__Concurrency` | `2` | Parallel past-price requests to each of TSETMC, Bitpin, tgju and IME (FIPIRAN: always 1) |
+| `PriceHistory__EarliestDate` | `2010-01-01` | No past prices before this day: bounds the Bitpin request and how many days of fund NAVs can be asked of FIPIRAN |
 | `Logging__LogLevel__Default` | `Information` | Log verbosity (`Debug`, `Information`, `Warning`, `Error`) |
 
 After editing `.env`, apply it with `docker compose up -d` (this recreates the container; a plain

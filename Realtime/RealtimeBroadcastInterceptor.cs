@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Dtos;
 using PortfolioManager.Api.Models;
 
@@ -51,7 +52,7 @@ public sealed class RealtimeBroadcastInterceptor(WebSocketHub hub) : SaveChanges
 
     private void Capture(DbContext? context)
     {
-        if (context is null)
+        if (context is null or AppDbContext { BroadcastChanges: false })
             return;
 
         var changed = context.ChangeTracker.Entries()
