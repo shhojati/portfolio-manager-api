@@ -685,6 +685,10 @@ In a browser:
 1. Open `https://<DOMAIN>/` → login page → sign in as admin → assets list loads.
 2. The sidebar shows a green **Live** dot (WebSocket through the proxy works).
 3. Open an asset → chart and price table load.
+4. Open `https://<DOMAIN>/api/diagnostics/tgju-history` (still signed in) → `statusCode` 200 and
+   `parsedDays` in the thousands: the host can reach tgju's history API (`api.tgju.org`, not the live
+   feed's `callN.tgju.org`). Otherwise `addresses`, `dnsError` and `error` show where it fails.
+   `?key=price_eur` checks another instrument.
 
 Rate limit sanity check (from one machine; uses up your anonymous budget for a minute):
 
