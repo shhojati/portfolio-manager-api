@@ -1,0 +1,64 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# One deploy at a time. A newer push waits instead of cancelling: cancelling would cut the SSH session in the
+# middle of a build on the server.
+concurrency:
+  group: vps-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # The VPS builds the image itself: it can reach nuget.org and mcr.microsoft.com, and sending the source as a
+      # git fetch is much smaller than sending a built image to a server in Iran.
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      # Checks out exactly the pushed commit in /opt/portfolio-manager, rebuilds and recreates the container, and waits
+      # until the app answers. .env and data/ are git-ignored, so the reset leaves them alone.
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 \
+            "$VPS_USER@$VPS_HOST" bash -s -- "$GITHUB_SHA" <<'EOF'
+          set -euo pipefail
+          cd /opt/portfolio-manager
+          git fetch --quiet origin master
+          git reset --hard "$1"
+          docker compose up -d --build
+
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ || true)
+            if [ "$status" = "302" ]; then
+              echo "Deployed $1; the app answers."
+              docker image prune -f > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+
+          # The repository is public and anyone can read job logs, so only error lines are printed, never the whole
+          # log (see liara-logs.yml).
+          echo "The app did not answer within a minute."
+          docker compose ps
+          docker compose logs --since 5m api | grep -E -A 3 "fail: |crit: " || true
+          exit 1
+          EOF

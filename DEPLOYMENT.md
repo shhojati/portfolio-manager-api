@@ -316,6 +316,7 @@ The committed `.env.example` contains the same template with all optional settin
 | `docker-compose.yml` | Running the container on the VPS | See below |
 | `.env.example` | Template for `.env` | Committed, no secrets |
 | `.dockerignore` | Keeps files out of the build context | Excludes `.env`, `data/`, `*.db`, `bin/`, `obj/`, `.git/` so secrets and the database never end up in an image |
+| `.github/workflows/deploy-vps.yml` | Deploying every push to the VPS | See [section 10.4](#104-automatic-deploys-from-github) |
 | `liara.json`, `.github/workflows/deploy-liara.yml` | Liara deployment | Not used on the VPS. Disable the workflow after migrating ([section 8](#8-migrate-from-liara-cutover)) |
 
 ### 4.1 `docker-compose.yml`, line by line
@@ -804,6 +805,26 @@ Seeding only creates users that don't exist, so add a **new** admin with a new u
 3. Sign in as `admin2`, reset the old admin's password on the Users page (or delete it), then remove
    the lines from `.env`.
 
+### 10.4 Automatic deploys from GitHub
+
+`.github/workflows/deploy-vps.yml` runs on every push to `master` (and by hand from the Actions tab).
+It connects to the VPS over SSH, checks out the pushed commit in `/opt/portfolio-manager`, runs
+`docker compose up -d --build` there, and fails unless the app answers within a minute. Only error
+lines of the app log are printed, because the repository's job logs are public.
+
+It needs the repository to be cloned in `/opt/portfolio-manager` with a `.env` (section 6), and these
+repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `VPS_HOST` | `<VPS_IP>` |
+| `VPS_USER` | The SSH user, e.g. `root` (must be able to run `docker` and own the checkout) |
+| `VPS_SSH_KEY` | A private key used only for deploys; its public key is in that user's `~/.ssh/authorized_keys` |
+| `VPS_KNOWN_HOSTS` | Output of `ssh-keyscan <VPS_IP>`, so the workflow refuses a server it doesn't know |
+
+GitHub's runners are outside Iran; if the job can't connect, the data center filters incoming foreign
+SSH traffic, and the provider must allow it.
+
 ---
 
 ## 11. VPS located in Iran
@@ -827,11 +848,9 @@ cd /opt/portfolio-manager && docker compose up -d --no-build
 ```
 
 The image name `portfolio-manager:latest` matches `image:` in `docker-compose.yml`, so
-`--no-build` runs the loaded image. Repeat for every update. (This can be automated in GitHub Actions:
-build, `docker save`, `scp` to the VPS, `docker load`, `docker compose up -d --no-build`. No such
-workflow exists yet; `.github/workflows/deploy-liara.yml` only deploys to Liara. GitHub's runners are
-outside Iran, so before writing one, check that they can reach the VPS over SSH: some Iranian data
-centers filter incoming foreign traffic.)
+`--no-build` runs the loaded image. Repeat for every update. (Where the VPS can reach `nuget.org` and
+`mcr.microsoft.com`, as the ParsPack VPS can, `.github/workflows/deploy-vps.yml` deploys every push
+instead: see [section 10.4](#104-automatic-deploys-from-github).)
 
 **B. Publish elsewhere, build the runtime image on the VPS** (needs only `mcr.microsoft.com` for the
 `aspnet:10.0` base image, the same approach Liara used):
