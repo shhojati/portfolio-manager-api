@@ -1,8 +1,8 @@
 name: Deploy to Liara
 
+# Production moved to the VPS (deploy-vps.yml), so pushes no longer deploy here. Run it by hand only to bring the
+# old Liara app back as a fallback.
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 # Never run two deploys at once; a newer push cancels the older one.
