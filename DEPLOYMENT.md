@@ -1,7 +1,8 @@
-# Deploying Portfolio Manager API on an Ubuntu VPS (migrating from Liara)
+# Deploying Portfolio Manager API on an Ubuntu VPS
 
-This document explains how to run this service on an Ubuntu VPS with Docker, how to move the existing
-data off Liara, and how every setting and environment variable works. It is written so that a person
+This document explains how to run this service on an Ubuntu VPS with Docker, how the existing data
+was moved off Liara, and how every setting and environment variable works. The production server
+itself is described in [section 1.1](#11-production-server-arvancloud-vps). It is written so that a person
 or an AI agent can follow it step by step, and can answer questions like "how do I change the rate
 limit?" or "why can't I log in?" from it.
 
@@ -47,6 +48,76 @@ Placeholders used in this document:
 | `<VPS_IP>` | Public IP address of the VPS |
 | `<REPO_URL>` | Git URL of this repository |
 | `<SSH_USER>` | Non-root user you log in with on the VPS |
+
+### 1.1 Production server (ArvanCloud VPS)
+
+Since 2026-10-19 production runs on an ArvanCloud cloud server; Liara is no longer used
+([section 8](#8-migrate-from-liara-cutover)). This section is what the server actually looks like. The rest of
+the document is the general procedure it was built with.
+
+| Item | Value |
+|---|---|
+| Provider / plan | ArvanCloud cloud server, smallest plan: 1 vCPU, 1 GB RAM, Ubuntu |
+| Login | `root` over SSH key. The IP is in the Arvan panel and in the `portfolio-api` DNS record |
+| Hostname | `ubuntu---1-vcpu---1-gb-ram` |
+| Service URL | `https://portfolio-api.shahabdev.ir` (production) |
+| Second URL | `https://vps.shahabdev.ir`, the same app. Was used for testing before the cutover; keep it for checking the server directly |
+| DNS | ParsPack CDN DNS (section 8.1): `portfolio-api` and `vps` are `A` records to the VPS IP, **proxy off** |
+| Checkout, `.env`, data | `/opt/portfolio-manager` (`.env` is `chmod 600`, data in `data/`) |
+| Reverse proxy | Caddy from Ubuntu's `apt`, config `/etc/caddy/Caddyfile` (below), Let's Encrypt certificates renewed by Caddy |
+| Docker | `docker.io` + `docker-compose-v2` from Ubuntu's repository, log rotation in `/etc/docker/daemon.json` (section 5.5) |
+| Swap | 2 GB swap file. Required: with 1 GB RAM the image build on the server runs out of memory without it |
+| Firewall | `ufw` allows OpenSSH, 80, 443. The Arvan panel's own firewall must allow the same ports |
+| Timezone | `Asia/Tehran` (`timedatectl`) |
+| Repository access | The GitHub repository is **private**. The server pulls with a read-only deploy key (below) |
+| Deploys | Every push to `master` by `.github/workflows/deploy-vps.yml` (section 10.4) |
+| Backups | Nightly at 03:30 to `/var/backups/portfolio-manager`, kept 14 days (section 10.1), plus Arvan panel snapshots |
+
+**Why ArvanCloud.** TSETMC (`cdn.tsetmc.com`) and FIPIRAN (`www.fipiran.ir`) block whole IP ranges. A
+ParsPack VPS was set up first, but neither site was reachable from any ParsPack address (TCP timeouts),
+and ParsPack support could not change it. From the Arvan server both answer `200`. **Before moving to
+any other host, run the checks in section 5.6 from that host first.** Without TSETMC and FIPIRAN, stock,
+ETF and fund prices stop updating while everything else seems fine.
+
+**Caddyfile** (`/etc/caddy/Caddyfile`):
+
+```caddy
+vps.shahabdev.ir, portfolio-api.shahabdev.ir {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+After editing it: `systemctl reload caddy && journalctl -u caddy -n 30 --no-pager`. The log warning
+`no OCSP stapling ... no OCSP server specified in certificate` is harmless; Let's Encrypt no longer
+runs OCSP.
+
+**Pulling from GitHub.** The server has a read-only deploy key `~/.ssh/github_repo`. Its public half is in
+the repository's Settings → Deploy keys, with **Allow write access off**. GitHub is reached over port 443,
+in `~/.ssh/config`:
+
+```
+Host github.com
+    HostName ssh.github.com
+    Port 443
+    User git
+    IdentityFile ~/.ssh/github_repo
+    IdentitiesOnly yes
+```
+
+Check it with `ssh -T git@github.com`, which should greet the repository's deploy key. If a deploy fails with
+`channel 0: open failed: administratively prohibited` or `Could not read from remote repository`, this
+key or its entry in the repository's deploy keys is wrong.
+
+**Deploying from GitHub Actions.** The workflow logs in with a separate key, `~/.ssh/github_actions`:
+
+- Its public half is in `/root/.ssh/authorized_keys`.
+- Its private half exists only in the `VPS_SSH_KEY` secret. It was deleted from the server.
+- `VPS_HOST` is the VPS IP, `VPS_USER` is `root`, and `VPS_KNOWN_HOSTS` holds `ssh-keyscan <VPS_IP>`.
+- If the server is rebuilt or its IP changes, update `VPS_HOST` and `VPS_KNOWN_HOSTS`.
+
+**Users.** The Liara database had no rows in `Users`, so on the first start the app created `admin`
+and `api-client` from `Auth__Users__*` in `.env`. Changing those `.env` values now has no effect;
+change passwords in the backoffice (section 10).
 
 ---
 
@@ -443,6 +514,18 @@ curl -sS -o /dev/null -w "ime    %{http_code}\n" -A "Mozilla/5.0" https://dataap
 Any `200`–`4xx` answer means the host is reachable; timeouts or connection errors mean that price
 source will not sync from this VPS (the API still works, but those prices stop updating).
 
+- **Browser User-Agent.** TSETMC and FIPIRAN answer `403` without one, so keep the `-A "Mozilla/5.0"`.
+- **Seeing the response body.** Drop `-o /dev/null -w ...` and add `--compressed`, otherwise curl
+  prints nothing or prints binary:
+  ```bash
+  curl -s --compressed -A "Mozilla/5.0" https://cdn.tsetmc.com/api/MarketData/GetMarketOverview/1; echo
+  ```
+- **Don't judge by `traceroute`.** Plain `traceroute` uses UDP and ICMP, which these sites' firewalls drop,
+  so it never reaches them even from a server that can use them. Use curl, or
+  `traceroute -T -p 443 <host>`, which goes over TCP.
+- **Blocking is by IP range.** These sites block whole ranges, and a new server from another provider,
+  or in another data center, may get a different result. Test from the actual server before setting it up.
+
 ---
 
 ## 6. Deploy the application
@@ -580,7 +663,7 @@ limit. Configure the proxy to take the client IP from the CDN's header (Caddy: `
 
 ### 7.4 ParsPack CDN
 
-The domain's DNS is hosted on ParsPack's CDN ([section 8.1](#81-current-setup-before-the-cutover)). Each
+The domain's DNS is hosted on ParsPack's CDN ([section 8.1](#81-setup-before-the-cutover)). Each
 record has a proxy switch; with it off ("DNS only") the CDN only answers DNS and none of this section
 applies. Before turning the proxy on for the service record:
 
@@ -620,9 +703,18 @@ What must move: the contents of the Liara disk `data` (mounted at `/app/data`):
 - Moving `keys/` keeps admins signed in and keeps existing API tokens working. Without it, admins
   sign in again and API clients request new tokens; nothing else is affected.
 
-### 8.1 Current setup (before the cutover)
+**Status: done on 2026-10-19.** Production now runs on the ArvanCloud VPS ([section 1.1](#11-production-server-arvancloud-vps)).
+The sections below are kept as the record of how it was done, and for the rollback.
 
-As of October 2026 the service runs on Liara, and its domain's DNS is hosted on ParsPack's CDN:
+- The rehearsal copy of the Liara database became the production database. The Liara app was not
+  stopped for a final copy, because nothing user-made had changed on it in the meantime.
+- `deploy-liara.yml` now runs only by hand, so pushes no longer deploy to Liara.
+- What remains: stop the Liara app and remove the domain from it, delete it and its disk after a few days of
+  stable running, then delete the `LIARA_API_TOKEN` secret and the Liara DNS records in the table below.
+
+### 8.1 Setup before the cutover
+
+Until October 2026 the service ran on Liara. The domain's DNS is hosted on ParsPack's CDN, and still is:
 
 | Item | Value |
 |---|---|
@@ -653,14 +745,22 @@ A day before the cutover, lower the TTL of `portfolio-api` and `@` to the minimu
    remove that test data: `docker compose down && sudo rm -rf data`.
 2. **Stop the Liara app** so the database stops changing (Liara console → app → turn off / scale to
    zero). Stopping also flushes the SQLite WAL into `portfolio.db`.
-3. **Download the disk contents.** Liara offers disk backups and file access for disks in its console;
-   check Liara's current documentation for the exact method (download a disk backup, or connect to
-   the disk via its file-transfer access). You need every file listed above.
-4. **Copy them to the VPS:**
+3. **Download the disk contents.** In the Liara console, open the disk. It has three options:
+   - The file manager downloads files one at a time, so each file in `keys/` has to be downloaded separately.
+   - A disk backup.
+   - FTPS access, which only works while the app runs.
+
+   You need every file listed above. A `portfolio.db-wal` that has disappeared after the app stopped is
+   normal: it was written into `portfolio.db`.
+4. **Copy them to the VPS.** Put them in one folder, e.g. `C:\pm-data` with `portfolio.db` next to
+   `keys\`. From Windows PowerShell:
    ```bash
-   scp -r ./liara-data/* <SSH_USER>@<VPS_IP>:/tmp/pm-data/
+   scp -r C:\pm-data <SSH_USER>@<VPS_IP>:/tmp/
    ```
-   On the VPS:
+   Don't use `scp C:\pm-data\* ...`: PowerShell doesn't expand `*` for scp, so nothing is copied.
+
+   On the VPS, run `ls -la /tmp/pm-data` first. `sqlite3` creates an empty database when the file is missing,
+   and that empty database also passes `integrity_check`. Then:
    ```bash
    sudo mkdir -p /opt/portfolio-manager/data
    sudo cp -a /tmp/pm-data/. /opt/portfolio-manager/data/
@@ -668,16 +768,18 @@ A day before the cutover, lower the TTL of `portfolio-api` and `@` to the minimu
    ```
 5. **Start the app:** `docker compose up -d --build`, then check the logs (section 6.4). There should be
    no `Created ... user` lines (users exist) and no "No admin user exists" warning.
-6. **Switch DNS** to the VPS (the records in [section 8.1](#81-current-setup-before-the-cutover)), and
+6. **Switch DNS** to the VPS (the records in [section 8.1](#81-setup-before-the-cutover)), and
    give the new URL to API consumers that used the `*.liara.run` address.
-7. **Verify** (section 9), then **disable Liara deploys**: delete or disable
-   `.github/workflows/deploy-liara.yml`. Otherwise every push to `master` still deploys to Liara, and
+7. **Verify** (section 9), then **disable Liara deploys**: remove the `push` trigger from
+   `.github/workflows/deploy-liara.yml` (done; it now runs only by hand, for a rollback). Otherwise every push to `master` still deploys to Liara, and
    a second copy of the service would run with its own, diverging database.
 8. Keep the Liara app stopped (not deleted) for a few days as a fallback, then delete it.
 
 ### 8.3 Rollback
 
-Start the Liara app again and point DNS back. Data written on the VPS after the cutover would need to
+While the Liara app still exists: start it again and point DNS back (`portfolio-api` → CNAME
+`sabalan.liara.cloud`, plus the deleted Liara records if they are gone, which Liara shows again when you add
+the domain). New code reaches Liara only by running `deploy-liara.yml` by hand. Data written on the VPS after the cutover would need to
 be copied back the same way (stop VPS app, copy `data/` to the Liara disk).
 
 ---
@@ -810,7 +912,8 @@ Seeding only creates users that don't exist, so add a **new** admin with a new u
 `.github/workflows/deploy-vps.yml` runs on every push to `master` (and by hand from the Actions tab).
 It connects to the VPS over SSH, checks out the pushed commit in `/opt/portfolio-manager`, runs
 `docker compose up -d --build` there, and fails unless the app answers within a minute. Only error
-lines of the app log are printed, because the repository's job logs are public.
+lines of the app log are printed. The repository is private now, but job logs are still readable by
+everyone with access to it, and the repository could be made public again.
 
 It needs the repository to be cloned in `/opt/portfolio-manager` with a `.env` (section 6), and these
 repository secrets (Settings → Secrets and variables → Actions):
@@ -824,6 +927,9 @@ repository secrets (Settings → Secrets and variables → Actions):
 
 GitHub's runners are outside Iran; if the job can't connect, the data center filters incoming foreign
 SSH traffic, and the provider must allow it.
+
+The server pulls the code itself (`git fetch`), so it also needs read access to the repository: a
+read-only deploy key, as set up on the production server ([section 1.1](#11-production-server-arvancloud-vps)).
 
 ---
 
@@ -849,7 +955,7 @@ cd /opt/portfolio-manager && docker compose up -d --no-build
 
 The image name `portfolio-manager:latest` matches `image:` in `docker-compose.yml`, so
 `--no-build` runs the loaded image. Repeat for every update. (Where the VPS can reach `nuget.org` and
-`mcr.microsoft.com`, as the ParsPack VPS can, `.github/workflows/deploy-vps.yml` deploys every push
+`mcr.microsoft.com`, as the ArvanCloud production VPS can, `.github/workflows/deploy-vps.yml` deploys every push
 instead: see [section 10.4](#104-automatic-deploys-from-github).)
 
 **B. Publish elsewhere, build the runtime image on the VPS** (needs only `mcr.microsoft.com` for the
@@ -888,6 +994,9 @@ Iran). If it can't, use a certificate from your provider or a CDN in front ([sec
 | Container restarts in a loop | Look at `docker compose logs api` | Common: unreadable/corrupt database (restore backup), invalid value format in `.env` (e.g. `Window=60` instead of `00:01:00`) |
 | `SQLite Error: database is locked` or corrupt after a manual copy | Database copied while running | Stop the app before copying, or use `sqlite3 .backup` (section 10.1) |
 | No new stock prices | Outside market hours (Sat–Wed 08:45–13:00 Tehran), or TSETMC unreachable from the VPS | Check the time; test with section 5.6 |
+| TSETMC / FIPIRAN time out from a new server | The site blocks that provider's IP range | Nothing to fix on the server or with the provider; use another provider (section 1.1) |
+| Deploy workflow fails with `administratively prohibited` or `Could not read from remote repository` | The server's deploy key for GitHub is wrong or not added to the repository | Section 1.1, "Pulling from GitHub" |
+| After restoring a database, the log shows `Created Admin user admin` | The restored file was empty or missing, and the app started on a new database | Check `ls -la` and `SELECT COUNT(*) FROM Assets;` on the file before starting (section 8.2) |
 | `401` from the API with a token that worked before | Access token expired (1 h), user deleted, or keys lost | Call `/api/auth/refresh` with the refresh token, or request a new token |
 | CORS error in a browser app on another domain | Origin not allowed | Add `Cors__AllowedOrigins__0=https://that-app.example.com` |
 
@@ -915,11 +1024,13 @@ When operating this deployment on someone's behalf:
 5. **Changing a password in `.env` doesn't change an existing user.** Use the backoffice, or create a
    new user with a new username.
 6. **`docker compose restart` does not apply `.env` changes**; use `docker compose up -d`.
-7. **Turn off Liara deployments** (`.github/workflows/deploy-liara.yml`) once the VPS is live, or two
-   diverging copies of the service will run.
+7. **Don't put `push` back on `.github/workflows/deploy-liara.yml`.** Production is the VPS, and a
+   second deployed copy would run with its own, diverging database.
 8. **Prefer configuration over code changes.** Rate limits, lifetimes, CORS origins, Swagger and sync
    schedules are all settable through environment variables (section 3.4).
 9. **Admin role = full access, ApiClient = read-only.** Give API consumers `ApiClient` accounts only.
 10. **Never log install ids, install tokens or client IPs**, and don't store them. The app promises its
     users that nothing identifying is collected; install tokens exist only for rate limiting.
 11. **Run a single instance.** Rate limit counters are in memory (section 2, Rate limiting).
+12. **Keep the server's GitHub deploy key read-only.** It only needs to fetch; with write access, anyone
+    who gets into the server could push to the repository.

@@ -55,7 +55,7 @@ jobs:
             sleep 2
           done
 
-          # The repository is public and anyone can read job logs, so only error lines are printed, never the whole
+          # Everyone who can read the repository can read job logs, so only error lines are printed, never the whole
           # log (see liara-logs.yml).
           echo "The app did not answer within a minute."
           docker compose ps

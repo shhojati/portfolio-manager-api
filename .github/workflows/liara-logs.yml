@@ -1,7 +1,7 @@
 name: Liara app logs
 
 # Prints the running app's logs from Liara, for checking on the server from a network that can't reach Liara.
-# The repository is public and any signed-in GitHub user can read job logs, so only lines matching the filter are
+# Everyone who can read the repository can read job logs, so only lines matching the filter are
 # printed (by default the price sync jobs' lines, which hold no user data), never the whole log.
 on:
   workflow_dispatch:
