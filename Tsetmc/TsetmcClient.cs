@@ -54,6 +54,38 @@ public sealed class TsetmcClient(HttpClient http)
             : new MarketWatchItem(insCode, info.InstrumentId, info.Symbol, info.Name, 0);
     }
 
+    /// <summary>How many units of the underlying one contract of an option or future is for, or null if TSETMC doesn't say.</summary>
+    public async Task<int?> GetContractSizeAsync(string insCode, CancellationToken ct)
+    {
+        var info = (await http.GetFromJsonAsync<InstrumentInfoResponse>(
+            $"api/Instrument/GetInstrumentInfo/{Uri.EscapeDataString(insCode)}", ct))?.InstrumentInfo;
+        return info?.ContractSize > 0 ? info.ContractSize : null;
+    }
+
+    /// <summary>
+    /// Every open TSE and IFB option contract with its terms and current price, in a single request (about 1,700
+    /// contracts). TSETMC lists them as call/put pairs with the same strike and expiry; each side is a quote of its own.
+    /// It has no ISINs.
+    /// </summary>
+    public async Task<IReadOnlyList<OptionQuote>> GetOptionMarketWatchAsync(CancellationToken ct)
+    {
+        // The last segment is the market: 0 both, 1 TSE, 2 IFB.
+        var response = await http.GetFromJsonAsync<OptionMarketWatchResponse>("api/Instrument/GetInstrumentOptionMarketWatch/0", ct);
+        var quotes = new List<OptionQuote>();
+        foreach (var pair in response?.InstrumentOptMarketWatch ?? [])
+        {
+            if (!DateOnly.TryParseExact(pair.EndDate, "yyyyMMdd", out var expiry))
+                continue;
+
+            quotes.Add(new OptionQuote(pair.CallInsCode, pair.CallSymbol, pair.CallName, true, pair.StrikePrice,
+                pair.ContractSize, expiry, pair.UnderlyingInsCode, pair.UnderlyingSymbol, pair.CallClosingPrice));
+            quotes.Add(new OptionQuote(pair.PutInsCode, pair.PutSymbol, pair.PutName, false, pair.StrikePrice,
+                pair.ContractSize, expiry, pair.UnderlyingInsCode, pair.UnderlyingSymbol, pair.PutClosingPrice));
+        }
+
+        return quotes;
+    }
+
     /// <summary>An instrument's latest closing price and the day it was last traded, or null if it has none.</summary>
     public async Task<ClosingPrice?> GetClosingPriceAsync(string insCode, CancellationToken ct)
     {
@@ -114,7 +146,25 @@ public sealed class TsetmcClient(HttpClient http)
     private sealed record InstrumentInfo(
         [property: JsonPropertyName("instrumentID")] string? InstrumentId,
         [property: JsonPropertyName("lVal18AFC")] string? Symbol,
-        [property: JsonPropertyName("lVal30")] string? Name);
+        [property: JsonPropertyName("lVal30")] string? Name,
+        [property: JsonPropertyName("contractSize")] int ContractSize);
+
+    private sealed record OptionMarketWatchResponse(List<OptionPair>? InstrumentOptMarketWatch);
+
+    private sealed record OptionPair(
+        [property: JsonPropertyName("insCode_C")] string? CallInsCode,
+        [property: JsonPropertyName("lVal18AFC_C")] string? CallSymbol,
+        [property: JsonPropertyName("lVal30_C")] string? CallName,
+        [property: JsonPropertyName("pClosing_C")] decimal CallClosingPrice,
+        [property: JsonPropertyName("insCode_P")] string? PutInsCode,
+        [property: JsonPropertyName("lVal18AFC_P")] string? PutSymbol,
+        [property: JsonPropertyName("lVal30_P")] string? PutName,
+        [property: JsonPropertyName("pClosing_P")] decimal PutClosingPrice,
+        [property: JsonPropertyName("strikePrice")] decimal StrikePrice,
+        [property: JsonPropertyName("contractSize")] int ContractSize,
+        [property: JsonPropertyName("endDate")] string? EndDate,
+        [property: JsonPropertyName("uaInsCode")] string? UnderlyingInsCode,
+        [property: JsonPropertyName("lval30_UA")] string? UnderlyingSymbol);
 
     private sealed record ClosingPriceInfoResponse(ClosingPriceInfo? ClosingPriceInfo);
 
@@ -139,6 +189,19 @@ public sealed record MarketWatchItem(
     [property: JsonPropertyName("lva")] string? Symbol,
     [property: JsonPropertyName("lvc")] string? Name,
     [property: JsonPropertyName("pcl")] decimal ClosingPrice);
+
+/// <summary>One side of an option pair: a call or a put. Prices are Rial per unit of the underlying.</summary>
+public sealed record OptionQuote(
+    string? InsCode,
+    string? Symbol,
+    string? Name,
+    bool IsCall,
+    decimal StrikePrice,
+    int ContractSize,
+    DateOnly ExpiryDate,
+    string? UnderlyingInsCode,
+    string? UnderlyingSymbol,
+    decimal ClosingPrice);
 
 public sealed record EtfNav(DateOnly Date, decimal Value);
 

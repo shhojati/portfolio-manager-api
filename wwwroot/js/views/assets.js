@@ -10,7 +10,7 @@ import { assetDialog, deleteAsset } from './forms.js';
 const navigate = hash => { location.hash = hash; };
 
 const PAGE_SIZE = 50;
-const TYPE_ORDER = ['Stock', 'ETF', 'Fund', 'Certificate', 'Salaf', 'Crypto', 'Currency', 'Gold', 'Coin', 'Metal'];
+const TYPE_ORDER = ['Stock', 'ETF', 'Fund', 'Certificate', 'Salaf', 'Option', 'Future', 'Crypto', 'Currency', 'Gold', 'Coin', 'Metal'];
 
 export function renderAssets(main, _params, query) {
   const state = {

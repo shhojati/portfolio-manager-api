@@ -68,6 +68,40 @@ namespace PortfolioManager.Api.Data.Migrations
                     b.ToTable("Assets");
                 });
 
+            modelBuilder.Entity("PortfolioManager.Api.Models.DerivativeContract", b =>
+                {
+                    b.Property<int>("AssetId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ContractSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("ExpiryDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("StrikePrice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("UnderlyingAssetId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UnderlyingSymbol")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AssetId");
+
+                    b.HasIndex("UnderlyingAssetId");
+
+                    b.ToTable("DerivativeContracts");
+                });
+
             modelBuilder.Entity("PortfolioManager.Api.Models.FipiranDay", b =>
                 {
                     b.Property<DateOnly>("Date")
@@ -100,6 +134,8 @@ namespace PortfolioManager.Api.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Date");
 
                     b.HasIndex("AssetId", "Date");
 
@@ -172,6 +208,24 @@ namespace PortfolioManager.Api.Data.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("PortfolioManager.Api.Models.DerivativeContract", b =>
+                {
+                    b.HasOne("PortfolioManager.Api.Models.Asset", "Asset")
+                        .WithOne("Contract")
+                        .HasForeignKey("PortfolioManager.Api.Models.DerivativeContract", "AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PortfolioManager.Api.Models.Asset", "UnderlyingAsset")
+                        .WithMany()
+                        .HasForeignKey("UnderlyingAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("UnderlyingAsset");
+                });
+
             modelBuilder.Entity("PortfolioManager.Api.Models.Price", b =>
                 {
                     b.HasOne("PortfolioManager.Api.Models.Asset", "Asset")
@@ -185,6 +239,8 @@ namespace PortfolioManager.Api.Data.Migrations
 
             modelBuilder.Entity("PortfolioManager.Api.Models.Asset", b =>
                 {
+                    b.Navigation("Contract");
+
                     b.Navigation("Prices");
                 });
 #pragma warning restore 612, 618

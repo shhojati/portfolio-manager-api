@@ -22,12 +22,33 @@ public class AssetsController(AppDbContext db) : ControllerBase
     // Each search word adds a LIKE over three columns, so only the first few count.
     private const int MaxSearchWords = 10;
 
+    private static readonly TimeZoneInfo Tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
+
+    /// <summary>All assets, optionally only one type, or the options and futures on one underlying asset.</summary>
+    /// <param name="type">Only assets of this type, e.g. Stock or Option.</param>
+    /// <param name="underlyingAssetId">Only the options and futures on this asset (its option chain).</param>
+    /// <param name="excludeExpired">Leave out options and futures past their expiry date (Tehran time).</param>
     [HttpGet]
-    public async Task<ActionResult<List<AssetDto>>> GetAll()
+    public async Task<ActionResult<List<AssetDto>>> GetAll(
+        [FromQuery] string? type, [FromQuery] int? underlyingAssetId, [FromQuery] bool excludeExpired = false)
     {
-        return await db.Assets
+        var query = db.Assets.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            var wanted = type.Trim();
+            query = query.Where(a => a.Type == wanted);
+        }
+        if (underlyingAssetId is not null)
+            query = query.Where(a => a.Contract != null && a.Contract.UnderlyingAssetId == underlyingAssetId);
+        if (excludeExpired)
+        {
+            var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tehran));
+            query = query.Where(a => a.Contract == null || a.Contract.ExpiryDate >= today);
+        }
+
+        return await query
             .OrderBy(a => a.Symbol)
-            .Select(a => ToDto(a))
+            .Select(AssetDtoMapping.Projection)
             .ToListAsync();
     }
 
@@ -66,7 +87,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
             .OrderByDescending(a => a.Symbol == symbol)
             .ThenByDescending(a => EF.Functions.Like(a.Symbol, prefix, @"\"))
             .ThenBy(a => a.Symbol)
-            .Select(a => ToDto(a))
+            .Select(AssetDtoMapping.Projection)
             .Take(50)
             .ToListAsync();
     }
@@ -88,7 +109,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
 
         var assets = await db.Assets
             .Where(a => ids.Contains(a.Identifier.ToUpper()))
-            .Select(a => ToDto(a))
+            .Select(AssetDtoMapping.Projection)
             .ToListAsync();
 
         return assets.OrderBy(a => ids.IndexOf(a.Identifier.ToUpperInvariant())).ToList();
@@ -97,8 +118,8 @@ public class AssetsController(AppDbContext db) : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<AssetDto>> GetById(int id)
     {
-        var asset = await db.Assets.FindAsync(id);
-        return asset is null ? NotFound() : ToDto(asset);
+        var asset = await db.Assets.Where(a => a.Id == id).Select(AssetDtoMapping.Projection).FirstOrDefaultAsync();
+        return asset is null ? NotFound() : asset;
     }
 
     /// <summary>Price history of an asset, newest first. Public: no sign-in needed, rate limited per IP.</summary>
@@ -132,7 +153,7 @@ public class AssetsController(AppDbContext db) : ControllerBase
         db.Assets.Add(asset);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = asset.Id }, ToDto(asset));
+        return CreatedAtAction(nameof(GetById), new { id = asset.Id }, AssetDtoMapping.ToDto(asset));
     }
 
     [HttpPut("{id:int}")]
@@ -173,8 +194,6 @@ public class AssetsController(AppDbContext db) : ControllerBase
 
         return NoContent();
     }
-
-    private static AssetDto ToDto(Asset a) => new(a.Id, a.Symbol, a.Identifier, a.Name, a.Type, a.CreatedAt, a.Unit);
 
     // Escapes LIKE wildcards so user input is matched literally.
     private static string EscapeLike(string text) => text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");

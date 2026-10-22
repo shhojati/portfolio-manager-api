@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Models;
+using static PortfolioManager.Api.Tsetmc.TsetmcImport;
 
 namespace PortfolioManager.Api.Tsetmc;
 
@@ -22,8 +23,6 @@ public sealed class TsetmcPriceSyncService(
     public const string EtfType = "ETF";
     public const string CertificateType = "Certificate";
     public const string SalafType = "Salaf";
-
-    private static readonly TimeZoneInfo Tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -47,7 +46,7 @@ public sealed class TsetmcPriceSyncService(
         {
             do
             {
-                var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tehran);
+                var now = TehranNow();
                 var next = now + opts.Interval;
 
                 var syncPrices = force || IsActive(opts, now, opts.MarketClose);
@@ -100,14 +99,8 @@ public sealed class TsetmcPriceSyncService(
         }
     }
 
-    private static bool IsActive(TsetmcOptions opts, DateTime tehranNow, TimeOnly until)
-    {
-        if (opts.TradingDays.Length > 0 && !opts.TradingDays.Contains(tehranNow.DayOfWeek))
-            return false;
-
-        var time = TimeOnly.FromDateTime(tehranNow);
-        return time >= opts.MarketOpen && time <= until;
-    }
+    private static bool IsActive(TsetmcOptions opts, DateTime tehranNow, TimeOnly until) =>
+        TsetmcImport.IsActive(opts.TradingDays, opts.MarketOpen, until, tehranNow);
 
     private async Task SyncPricesAsync(CancellationToken ct)
     {
@@ -119,7 +112,7 @@ public sealed class TsetmcPriceSyncService(
         var start = TimeProvider.System.GetTimestamp();
 
         var tradingDay = await client.GetLastTradingDateAsync(ct)
-            ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tehran));
+            ?? DateOnly.FromDateTime(TehranNow());
         var date = ToPriceDate(tradingDay);
         var items = await client.GetMarketWatchAsync(ct);
 
@@ -135,7 +128,7 @@ public sealed class TsetmcPriceSyncService(
             if (string.IsNullOrEmpty(item.InsCode) || Classify(item.Isin) is not { } type || item.ClosingPrice <= 0)
                 continue;
 
-            var (asset, created) = GetOrAddAsset(db, assets, symbols, item, type);
+            var (asset, created) = GetOrAddAsset(db, assets, symbols, item, type, UnitOf(type, Normalize(item.Symbol)), logger);
             if (asset is null)
             {
                 skipped++;
@@ -202,7 +195,7 @@ public sealed class TsetmcPriceSyncService(
                         Symbol = Truncate(Normalize(item.Symbol), 100),
                         Name = Truncate(Normalize(item.Name), 100),
                     });
-            }, ct);
+            }, logger, ct);
         db.TsetmcInstruments.AddRange(looked);
         await db.SaveChangesAsync(ct);
         foreach (var instrument in looked)
@@ -221,7 +214,7 @@ public sealed class TsetmcPriceSyncService(
             {
                 if (await client.GetClosingPriceAsync(insCode, token) is { } closing)
                     closings[insCode] = closing;
-            }, ct, attempts: 1);
+            }, logger, ct, attempts: 1);
 
         var assets = await db.Assets.ToDictionaryAsync(a => a.Identifier, ct);
         var symbols = assets.Values.Select(a => a.Symbol).ToHashSet();
@@ -237,8 +230,9 @@ public sealed class TsetmcPriceSyncService(
             if (!closings.TryGetValue(instrument.InsCode, out var closing))
                 continue;
 
+            var type = Classify(instrument.Isin)!;
             var item = new MarketWatchItem(instrument.InsCode, instrument.Isin, instrument.Symbol, instrument.Name, closing.Value);
-            var (asset, created) = GetOrAddAsset(db, assets, symbols, item, Classify(instrument.Isin)!);
+            var (asset, created) = GetOrAddAsset(db, assets, symbols, item, type, UnitOf(type, Normalize(item.Symbol)), logger);
             if (asset is null)
             {
                 skipped++;
@@ -267,69 +261,6 @@ public sealed class TsetmcPriceSyncService(
             importable.Count - closings.Count, createdAssets, createdPrices, updatedPrices, skipped);
     }
 
-    // The asset an instrument is imported as, added if it is new; null if another asset (e.g. one added by hand)
-    // already uses its symbol. Keeps the asset's TSETMC code up to date, which the NAV sync relies on.
-    private (Asset? Asset, bool Created) GetOrAddAsset(
-        AppDbContext db, Dictionary<string, Asset> assets, HashSet<string> symbols, MarketWatchItem item, string type)
-    {
-        var isin = item.Isin!;
-        var created = false;
-        if (!assets.TryGetValue(isin, out var asset))
-        {
-            var symbol = Normalize(item.Symbol).ToUpperInvariant();
-            if (symbol.Length is 0 or > 100 || !symbols.Add(symbol))
-            {
-                logger.LogDebug("Skipping {Isin}: symbol '{Symbol}' is already taken", isin, symbol);
-                return (null, false);
-            }
-
-            asset = new Asset
-            {
-                Symbol = symbol, Identifier = isin, Name = Truncate(Normalize(item.Name), 100), Type = type, Unit = UnitOf(type, symbol),
-            };
-            db.Assets.Add(asset);
-            assets[isin] = asset;
-            created = true;
-        }
-
-        asset.TsetmcInsCode = item.InsCode;
-        return (asset, created);
-    }
-
-    // Runs an action for every item, a few at a time. TSETMC sporadically answers 500/502 under load, and the same
-    // request usually succeeds a moment later, so by default each one is tried up to three times. Returns how many
-    // still failed.
-    private async Task<int> ForEachWithRetriesAsync<T>(
-        IEnumerable<T> items, int concurrency, Func<T, CancellationToken, Task> action, CancellationToken ct, int attempts = 3)
-    {
-        var failed = 0;
-        await Parallel.ForEachAsync(items,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, concurrency), CancellationToken = ct },
-            async (item, token) =>
-            {
-                for (var attempt = 1; ; attempt++)
-                {
-                    try
-                    {
-                        await action(item, token);
-                        return;
-                    }
-                    catch (Exception) when (!token.IsCancellationRequested && attempt < attempts)
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(attempt), token);
-                    }
-                    catch (Exception ex) when (!token.IsCancellationRequested)
-                    {
-                        Interlocked.Increment(ref failed);
-                        logger.LogDebug(ex, "TSETMC request for {Item} failed", item);
-                        return;
-                    }
-                }
-            });
-
-        return failed;
-    }
-
     private async Task SyncEtfNavsAsync(TsetmcOptions opts, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
@@ -350,7 +281,7 @@ public sealed class TsetmcPriceSyncService(
             {
                 if (await client.GetEtfNavAsync(etf.InsCode, token) is { } nav)
                     navs[etf.Id] = nav;
-            }, ct);
+            }, logger, ct);
 
         // A NAV is only attached to the price row of the same trading day; it is never carried over to another day.
         var assetIds = navs.Keys.ToList();
@@ -405,12 +336,4 @@ public sealed class TsetmcPriceSyncService(
     // certificates are left alone; their unit varies by commodity and TSETMC doesn't give it.
     private static string? UnitOf(string type, string symbol) =>
         type == CertificateType && symbol.StartsWith("سکه", StringComparison.Ordinal) ? "عدد" : null;
-
-    // Prices from this job are dated by trading day, stored as midnight UTC of that date.
-    private static DateTime ToPriceDate(DateOnly day) => day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-
-    // TSETMC uses Arabic ي/ك; store Persian ی/ک so searches typed on a Persian keyboard match.
-    private static string Normalize(string? text) => (text ?? string.Empty).Replace('ي', 'ی').Replace('ك', 'ک').Trim();
-
-    private static string Truncate(string text, int length) => text.Length > length ? text[..length] : text;
 }

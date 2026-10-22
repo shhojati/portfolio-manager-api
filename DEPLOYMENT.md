@@ -215,6 +215,7 @@ Keep it in backups together with the database.
 | Job | Source (outbound HTTPS) | Schedule (defaults) |
 |---|---|---|
 | TSETMC (stocks, ETFs, ETF NAVs) | `cdn.tsetmc.com` | Hourly, Sat–Wed 08:45–13:00 Tehran; NAVs until 18:30 |
+| TSETMC derivatives (TSE/IFB options, stock futures) | `cdn.tsetmc.com` | Every 5 min, Sat–Wed 08:45–13:00 Tehran; two requests for the whole market per run |
 | Bitpin (crypto) | `api.bitpin.ir` | Every 15 min, 24/7 |
 | tgju (currencies, gold, coins, metals) | `call1`–`call4.tgju.org` | Every 15 min |
 | FIPIRAN (issuance/redemption fund NAVs) | `www.fipiran.ir` | Hourly, 24/7 |
@@ -346,6 +347,8 @@ users already exist and these variables are not needed at all.
 | `Tsetmc__RunOnStartup` | `true` | Run one TSETMC sync at startup even outside market hours |
 | `Tsetmc__DiscoverInstruments`, `Tsetmc__DiscoveryConcurrency` | `true`, `4` | Once a day, also import the stocks and funds the market watch leaves out (it only has instruments active that day, so suspended ones are missing). The first run looks up about 6,500 instruments (about 3 minutes); later runs only look up new ones and fetch about 300 closing prices (a few seconds) |
 | `Tsetmc__ExtraInsCodes__0`, `__1`, ... | empty | TSETMC instrument codes (the number in a `tsetmc.com/instInfo/...` link) that discovery always considers, for an instrument missing from both the market watch and TSETMC's list of all instruments |
+| `TsetmcDerivatives__Enabled`, `TsetmcDerivatives__Interval`, `TsetmcDerivatives__MarketOpen` / `__MarketClose`, `TsetmcDerivatives__RunOnStartup` | `true`, `00:05:00`, `08:45` / `13:00`, `true` | Options and stock futures sync (about 1,700 contracts). Prices are Rial per unit of the underlying; the contract size is in each asset's `contract` |
+| `TsetmcDerivatives__LookupConcurrency` | `4` | Parallel lookups for options missing from the market watch (their ISIN) and new futures (their contract size); only the first run makes many |
 | `Tgju__MaxQuoteAge` | `7.00:00:00` | Ignore tgju quotes older than this |
 | `Fipiran__MaxNavAge` | `7.00:00:00` | Ignore funds whose latest NAV is older than this |
 | `Ime__LookbackDays` | `7` | Days of IME gold/silver certificate prices fetched each run; raise it once to import older prices (IME has them from 1401/12). IME only answers Iranian IPs, so this job fails on a server outside Iran |
@@ -505,6 +508,7 @@ sudo systemctl restart docker
 
 ```bash
 curl -sS -o /dev/null -w "tsetmc %{http_code}\n" -A "Mozilla/5.0" https://cdn.tsetmc.com/api/MarketData/GetMarketOverview/1
+curl -sS -o /dev/null -w "options %{http_code}\n" -A "Mozilla/5.0" https://cdn.tsetmc.com/api/Instrument/GetInstrumentOptionMarketWatch/0
 curl -sS -o /dev/null -w "bitpin %{http_code}\n" https://api.bitpin.ir/
 curl -sS -o /dev/null -w "tgju   %{http_code}\n" https://call1.tgju.org/ajax.json
 curl -sS -o /dev/null -w "fipiran %{http_code}\n" -A "Mozilla/5.0" https://www.fipiran.ir/services/fund/fundtype

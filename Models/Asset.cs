@@ -14,4 +14,5 @@ public class Asset
     public DateTime? HistoryLoadedAt { get; set; }
 
     public List<Price> Prices { get; set; } = new();
+    public DerivativeContract? Contract { get; set; } // only for options and futures
 }

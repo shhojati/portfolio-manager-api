@@ -28,7 +28,8 @@ public static class PriceSources
         // IME's continuous certificates share the Certificate type with TSETMC's, but have no TSETMC code.
         TsetmcPriceSyncService.CertificateType when tsetmcInsCode is null && ImeCertificates.ByCode(identifier) is not null => PriceSource.Ime,
         TsetmcPriceSyncService.StockType or TsetmcPriceSyncService.EtfType or TsetmcPriceSyncService.CertificateType
-            or TsetmcPriceSyncService.SalafType when tsetmcInsCode is not null => PriceSource.Tsetmc,
+            or TsetmcPriceSyncService.SalafType or TsetmcDerivativesSyncService.OptionType
+            or TsetmcDerivativesSyncService.FutureType when tsetmcInsCode is not null => PriceSource.Tsetmc,
         _ when TgjuInstruments.KeyOf(type, identifier) is not null => PriceSource.Tgju,
         _ => PriceSource.None,
     };

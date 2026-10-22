@@ -49,6 +49,10 @@ builder.Services.AddHttpClient<TsetmcClient>(http =>
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<TsetmcPriceSyncService>();
 
+// Background import of TSE/IFB options and stock futures from the same API, on a shorter schedule.
+builder.Services.Configure<TsetmcDerivativesOptions>(builder.Configuration.GetSection(TsetmcDerivativesOptions.SectionName));
+builder.Services.AddHostedService<TsetmcDerivativesSyncService>();
+
 // Background import of crypto prices (in Toman, stored as Rial) from bitpin.ir.
 builder.Services.Configure<BitpinOptions>(builder.Configuration.GetSection(BitpinOptions.SectionName));
 builder.Services.AddHttpClient<BitpinClient>(http =>

@@ -11,6 +11,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<TsetmcInstrument> TsetmcInstruments => Set<TsetmcInstrument>();
     public DbSet<FipiranDay> FipiranDays => Set<FipiranDay>();
+    public DbSet<DerivativeContract> DerivativeContracts => Set<DerivativeContract>();
 
     /// <summary>
     /// Whether this context's saves are pushed to WebSocket clients (see RealtimeBroadcastInterceptor). Turned off
@@ -50,6 +51,24 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(p => p.AssetId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(p => new { p.AssetId, p.Date });
+            // The sync jobs load one day's prices every run.
+            e.HasIndex(p => p.Date);
+        });
+
+        modelBuilder.Entity<DerivativeContract>(e =>
+        {
+            e.HasKey(c => c.AssetId);
+            e.HasOne(c => c.Asset)
+                .WithOne(a => a.Contract)
+                .HasForeignKey<DerivativeContract>(c => c.AssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(c => c.UnderlyingAsset)
+                .WithMany()
+                .HasForeignKey(c => c.UnderlyingAssetId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.Property(c => c.Kind).HasMaxLength(10).IsRequired();
+            e.Property(c => c.UnderlyingSymbol).HasMaxLength(100).IsRequired();
+            e.HasIndex(c => c.UnderlyingAssetId);
         });
 
         modelBuilder.Entity<User>(e =>
