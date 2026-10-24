@@ -22,8 +22,8 @@ public sealed class TsetmcDerivativesSyncService(
     public const string OptionType = "Option";
     public const string FutureType = "Future";
 
-    // Prices are per share (or fund unit) of the underlying, not per contract.
-    private const string Unit = "واحد پایه";
+    // Prices are per share (or fund unit) of the underlying, not per contract. Also the IME option job's.
+    public const string Unit = "واحد پایه";
 
     private static readonly PersianCalendar Persian = new();
 

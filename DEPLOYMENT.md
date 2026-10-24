@@ -216,6 +216,7 @@ Keep it in backups together with the database.
 |---|---|---|
 | TSETMC (stocks, ETFs, ETF NAVs) | `cdn.tsetmc.com` | Hourly, Sat–Wed 08:45–13:00 Tehran; NAVs until 18:30 |
 | TSETMC derivatives (TSE/IFB options, stock futures) | `cdn.tsetmc.com` | Every 5 min, Sat–Wed 08:45–13:00 Tehran; two requests for the whole market per run |
+| IME options (commodity exchange) | `www.ime.co.ir` | Hourly, last 7 days; IME's report is daily, made the evening after the trading day |
 | Bitpin (crypto) | `api.bitpin.ir` | Every 15 min, 24/7 |
 | tgju (currencies, gold, coins, metals) | `call1`–`call4.tgju.org` | Every 15 min |
 | FIPIRAN (issuance/redemption fund NAVs) | `www.fipiran.ir` | Hourly, 24/7 |
@@ -349,6 +350,7 @@ users already exist and these variables are not needed at all.
 | `Tsetmc__ExtraInsCodes__0`, `__1`, ... | empty | TSETMC instrument codes (the number in a `tsetmc.com/instInfo/...` link) that discovery always considers, for an instrument missing from both the market watch and TSETMC's list of all instruments |
 | `TsetmcDerivatives__Enabled`, `TsetmcDerivatives__Interval`, `TsetmcDerivatives__MarketOpen` / `__MarketClose`, `TsetmcDerivatives__RunOnStartup` | `true`, `00:05:00`, `08:45` / `13:00`, `true` | Options and stock futures sync (about 1,700 contracts). Prices are Rial per unit of the underlying; the contract size is in each asset's `contract` |
 | `TsetmcDerivatives__LookupConcurrency` | `4` | Parallel lookups for options missing from the market watch (their ISIN) and new futures (their contract size); only the first run makes many |
+| `ImeDerivatives__Enabled`, `ImeDerivatives__Interval`, `ImeDerivatives__LookbackDays` | `true`, `01:00:00`, `7` | Commodity exchange options sync. Only underlyings with a contract size in `Ime/ImeOptionUnderlyings.cs` are imported |
 | `Tgju__MaxQuoteAge` | `7.00:00:00` | Ignore tgju quotes older than this |
 | `Fipiran__MaxNavAge` | `7.00:00:00` | Ignore funds whose latest NAV is older than this |
 | `Ime__LookbackDays` | `7` | Days of IME gold/silver certificate prices fetched each run; raise it once to import older prices (IME has them from 1401/12). IME only answers Iranian IPs, so this job fails on a server outside Iran |
@@ -513,6 +515,7 @@ curl -sS -o /dev/null -w "bitpin %{http_code}\n" https://api.bitpin.ir/
 curl -sS -o /dev/null -w "tgju   %{http_code}\n" https://call1.tgju.org/ajax.json
 curl -sS -o /dev/null -w "fipiran %{http_code}\n" -A "Mozilla/5.0" https://www.fipiran.ir/services/fund/fundtype
 curl -sS -o /dev/null -w "ime    %{http_code}\n" -A "Mozilla/5.0" https://dataapi.ime.co.ir/
+curl -sS -o /dev/null -w "ime www %{http_code}\n" -A "Mozilla/5.0" https://www.ime.co.ir/
 ```
 
 Any `200`–`4xx` answer means the host is reachable; timeouts or connection errors mean that price

@@ -96,6 +96,17 @@ builder.Services.AddHttpClient<ImeClient>(http =>
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<ImePriceSyncService>();
 
+// Background import of the commodity exchange's options (in Rial) from its own site's daily report.
+builder.Services.Configure<ImeDerivativesOptions>(builder.Configuration.GetSection(ImeDerivativesOptions.SectionName));
+builder.Services.AddHttpClient<ImeDerivativesClient>(http =>
+    {
+        http.BaseAddress = new Uri("https://www.ime.co.ir/");
+        http.Timeout = TimeSpan.FromSeconds(60);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PortfolioManager/1.0");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+builder.Services.AddHostedService<ImeDerivativesSyncService>();
+
 // Past prices fetched from the same sources, on demand, when the history endpoint asks for days before what's stored.
 builder.Services.Configure<PriceHistoryOptions>(builder.Configuration.GetSection(PriceHistoryOptions.SectionName));
 builder.Services.AddSingleton<PriceHistoryBackfill>();
