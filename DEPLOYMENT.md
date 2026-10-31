@@ -214,12 +214,18 @@ Keep it in backups together with the database.
 
 | Job | Source (outbound HTTPS) | Schedule (defaults) |
 |---|---|---|
-| TSETMC (stocks, ETFs, ETF NAVs) | `cdn.tsetmc.com` | Hourly, Sat–Wed 08:45–13:00 Tehran; NAVs until 18:30 |
+| TSETMC (stocks, ETFs, ETF NAVs, the total index `TSE-INDEX`) | `cdn.tsetmc.com` | Hourly, Sat–Wed 08:45–13:00 Tehran; NAVs until 18:30 |
 | TSETMC derivatives (TSE/IFB options, stock futures) | `cdn.tsetmc.com` | Every 5 min, Sat–Wed 08:45–13:00 Tehran; two requests for the whole market per run |
 | IME options (commodity exchange) | `www.ime.co.ir` | Hourly, last 7 days; IME's report is daily, made the evening after the trading day |
 | Bitpin (crypto) | `api.bitpin.ir` | Every 15 min, 24/7 |
 | tgju (currencies, gold, coins, metals) | `call1`–`call4.tgju.org` | Every 15 min |
 | FIPIRAN (issuance/redemption fund NAVs) | `www.fipiran.ir` | Hourly, 24/7 |
+| Inflation (consumer price index `CPI-IR`) | none: `Inflation/CpiTable.cs` | Once at startup |
+
+The consumer price index has no source to fetch: `Inflation/CpiTable.cs` holds one value per Jalali
+month (the Statistical Centre's index, base 1400=100), and `InflationSyncService` stores them at startup,
+each dated the month's last day. When a month is published (amar.org.ir, usually a few weeks into the
+next month), add a line to the table and deploy; a corrected value is updated in place.
 
 The VPS must be able to reach these hosts. Some Iranian services block or throttle foreign IPs; check
 with `curl` before migrating (see [section 5.6](#56-check-outbound-access-to-the-price-sources)).
@@ -232,7 +238,7 @@ them as ordinary prices, so each is fetched only once (`History/PriceHistoryBack
 
 | Source | What is fetched | Marked as done in |
 |---|---|---|
-| TSETMC | The instrument's whole daily history (closing prices), one request | `Assets.HistoryLoadedAt` |
+| TSETMC | The instrument's whole daily history (closing prices), or the total index's (`GetIndexB2History`), one request | `Assets.HistoryLoadedAt` |
 | Bitpin | The coin's daily candles since `PriceHistory__EarliestDate`, one request | `Assets.HistoryLoadedAt` |
 | tgju | The instrument's whole daily history from `api.tgju.org` (plus the dollar's, for world metals) | `Assets.HistoryLoadedAt` |
 | IME | The certificate's trades since 1401/12, a few pages | `Assets.HistoryLoadedAt` |

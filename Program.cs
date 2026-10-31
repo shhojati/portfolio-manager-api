@@ -8,6 +8,7 @@ using PortfolioManager.Api.Data;
 using PortfolioManager.Api.Fipiran;
 using PortfolioManager.Api.History;
 using PortfolioManager.Api.Ime;
+using PortfolioManager.Api.Inflation;
 using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tgju;
@@ -106,6 +107,9 @@ builder.Services.AddHttpClient<ImeDerivativesClient>(http =>
     })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
 builder.Services.AddHostedService<ImeDerivativesSyncService>();
+
+// Iran's consumer price index, from a table kept by hand (Inflation/CpiTable.cs), stored once at startup.
+builder.Services.AddHostedService<InflationSyncService>();
 
 // Past prices fetched from the same sources, on demand, when the history endpoint asks for days before what's stored.
 builder.Services.Configure<PriceHistoryOptions>(builder.Configuration.GetSection(PriceHistoryOptions.SectionName));
