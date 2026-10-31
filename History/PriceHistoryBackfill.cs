@@ -19,7 +19,7 @@ public sealed record HistoryAsset(int Id, string Identifier, string Type, string
 /// Fetches past prices from the sources the price sync jobs use when a history request asks for days before what's
 /// stored, and stores them like the sync jobs' own prices (one row per asset per day, in Rial), so each is fetched once.
 /// <list type="bullet">
-/// <item>TSETMC, Bitpin and tgju give an asset's whole daily history in one request, and IME a certificate's since it
+/// <item>TSETMC (an instrument's or an index's), Bitpin and tgju give an asset's whole daily history in one request, and IME a certificate's since it
 /// started, so those are fetched per asset, all at once, the first time a day before its first stored price is asked
 /// for; <see cref="Asset.HistoryLoadedAt"/> marks it as done. Only days before its first stored price are added, so
 /// they never overlap with the sync job's.</item>
@@ -179,6 +179,8 @@ public sealed class PriceHistoryBackfill(
         IReadOnlyList<(DateOnly Date, decimal Value)> days = source switch
         {
             PriceSource.Tsetmc => (await services.GetRequiredService<TsetmcClient>().GetDailyClosingPricesAsync(asset.TsetmcInsCode!, ct))
+                .Select(d => (d.LastTradeDate, d.Value)).ToList(),
+            PriceSource.TsetmcIndex => (await services.GetRequiredService<TsetmcClient>().GetIndexHistoryAsync(asset.TsetmcInsCode!, ct))
                 .Select(d => (d.LastTradeDate, d.Value)).ToList(),
             PriceSource.Bitpin => (await services.GetRequiredService<BitpinClient>()
                     .GetDailyClosesAsync(asset.Identifier + BitpinPriceSyncService.TomanSuffix, options.Value.EarliestDate, ct))

@@ -125,6 +125,30 @@ public sealed class TsetmcClient(HttpClient http)
         return new EtfNav(date, etf.RedemptionPrice);
     }
 
+    /// <summary>
+    /// A market index's value now (during a session) or at the last close, from the one request that has every index
+    /// TSETMC publishes; null if it isn't among them. The value has no date of its own (see <see cref="GetLastTradingDateAsync"/>).
+    /// </summary>
+    public async Task<decimal?> GetIndexValueAsync(string insCode, CancellationToken ct)
+    {
+        var response = await http.GetFromJsonAsync<IndexLastAllResponse>("api/Index/GetIndexB1LastAll/All/1", ct);
+        var index = response?.IndexB1?.FirstOrDefault(i => i.InsCode == insCode);
+        return index?.Value > 0 ? index.Value : null;
+    }
+
+    /// <summary>A market index's closing value on every trading day since 1387 (about 4,300 rows), oldest first.</summary>
+    public async Task<IReadOnlyList<ClosingPrice>> GetIndexHistoryAsync(string insCode, CancellationToken ct)
+    {
+        var response = await http.GetFromJsonAsync<IndexHistoryResponse>(
+            $"api/Index/GetIndexB2History/{Uri.EscapeDataString(insCode)}", ct);
+        return (response?.IndexB2 ?? [])
+            .Where(d => d.Value > 0)
+            .Select(d => ParseDate(d.DEven) is { } date ? new ClosingPrice(date, d.Value) : null)
+            .OfType<ClosingPrice>()
+            .OrderBy(d => d.LastTradeDate)
+            .ToList();
+    }
+
     // TSETMC dates are Gregorian yyyyMMdd integers.
     private static DateOnly? ParseDate(int dEven) =>
         DateOnly.TryParseExact(dEven.ToString(CultureInfo.InvariantCulture), "yyyyMMdd", out var date) ? date : null;
@@ -175,6 +199,19 @@ public sealed class TsetmcClient(HttpClient http)
     private sealed record InstValuesResponse(List<InstValue>? InstValueAllInstAllParam);
 
     private sealed record InstValue([property: JsonPropertyName("insCode")] string? InsCode);
+
+    private sealed record IndexLastAllResponse(List<IndexLast>? IndexB1);
+
+    private sealed record IndexLast(
+        [property: JsonPropertyName("insCode")] string? InsCode,
+        [property: JsonPropertyName("xDrNivJIdx004")] decimal Value);
+
+    private sealed record IndexHistoryResponse(List<IndexDay>? IndexB2);
+
+    // The history's insCode is a JSON number too large for a double, so it isn't read.
+    private sealed record IndexDay(
+        [property: JsonPropertyName("dEven")] int DEven,
+        [property: JsonPropertyName("xNivInuClMresIbs")] decimal Value);
 
     private sealed record EtfResponse(EtfInfo? Etf);
 

@@ -12,6 +12,8 @@ public enum PriceSource
     /// <summary>Added by hand, or by a source that's no longer synced; its past prices can't be fetched.</summary>
     None,
     Tsetmc,
+    /// <summary>A TSETMC market index (see <see cref="TsetmcIndices"/>), whose history is TSETMC's index history.</summary>
+    TsetmcIndex,
     Bitpin,
     Tgju,
     Ime,
@@ -30,6 +32,7 @@ public static class PriceSources
         TsetmcPriceSyncService.StockType or TsetmcPriceSyncService.EtfType or TsetmcPriceSyncService.CertificateType
             or TsetmcPriceSyncService.SalafType or TsetmcDerivativesSyncService.OptionType
             or TsetmcDerivativesSyncService.FutureType when tsetmcInsCode is not null => PriceSource.Tsetmc,
+        TsetmcIndices.IndexType when tsetmcInsCode is not null => PriceSource.TsetmcIndex,
         _ when TgjuInstruments.KeyOf(type, identifier) is not null => PriceSource.Tgju,
         _ => PriceSource.None,
     };

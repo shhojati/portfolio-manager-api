@@ -11,8 +11,8 @@ namespace PortfolioManager.Api.Tsetmc;
 /// Background job that imports every stock and ETF listed on TSETMC (Tehran Stock Exchange, Farabourse, and the
 /// commodity and energy exchanges), and the commodity exchange's deposit certificates and parallel salaf contracts, as
 /// an <see cref="Asset"/> and keeps one <see cref="Price"/> per asset per trading day up to date (closing price, plus
-/// redemption NAV for ETFs). Once a day it also discovers the ones the market watch
-/// leaves out, such as suspended instruments.
+/// redemption NAV for ETFs), and the TSE's total index (see <see cref="TsetmcIndices"/>) likewise. Once a day it also
+/// discovers the ones the market watch leaves out, such as suspended instruments.
 /// </summary>
 public sealed class TsetmcPriceSyncService(
     IServiceScopeFactory scopeFactory,
@@ -66,7 +66,10 @@ public sealed class TsetmcPriceSyncService(
                 try
                 {
                     if (syncPrices)
+                    {
                         await SyncPricesAsync(stoppingToken);
+                        await SyncIndexAsync(stoppingToken);
+                    }
 
                     if (syncNavs)
                     {
@@ -155,6 +158,63 @@ public sealed class TsetmcPriceSyncService(
         logger.LogInformation(
             "TSETMC price sync finished in {Elapsed} for trading day {Date:yyyy-MM-dd}: {Instruments} instruments received, {CreatedAssets} assets added, {CreatedPrices} prices added, {UpdatedPrices} updated, {Skipped} skipped (symbol taken)",
             TimeProvider.System.GetElapsedTime(start), tradingDay, items.Count, createdAssets, createdPrices, updatedPrices, skipped);
+    }
+
+    /// <summary>
+    /// Keeps the total index's value for the trading day, like an instrument's closing price: added as an asset the first
+    /// time, then one price per trading day, updated in place during the session. A failure is logged and left to the
+    /// next run, so it doesn't hold up the rest.
+    /// </summary>
+    private async Task SyncIndexAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var client = scope.ServiceProvider.GetRequiredService<TsetmcClient>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            if (await client.GetIndexValueAsync(TsetmcIndices.TotalInsCode, ct) is not { } value)
+            {
+                logger.LogWarning("TSETMC index sync: the total index is missing from TSETMC's index list");
+                return;
+            }
+
+            var tradingDay = await client.GetLastTradingDateAsync(ct) ?? DateOnly.FromDateTime(TehranNow());
+            var date = ToPriceDate(tradingDay);
+            var asset = await db.Assets.FirstOrDefaultAsync(a => a.Identifier == TsetmcIndices.TotalIdentifier, ct);
+            if (asset is null)
+            {
+                if (await db.Assets.AnyAsync(a => a.Symbol == TsetmcIndices.TotalSymbol, ct))
+                {
+                    logger.LogWarning("TSETMC index sync: symbol '{Symbol}' is already taken", TsetmcIndices.TotalSymbol);
+                    return;
+                }
+
+                asset = new Asset
+                {
+                    Symbol = TsetmcIndices.TotalSymbol,
+                    Identifier = TsetmcIndices.TotalIdentifier,
+                    Name = TsetmcIndices.TotalName,
+                    Type = TsetmcIndices.IndexType,
+                    Unit = TsetmcIndices.Unit,
+                };
+                db.Assets.Add(asset);
+            }
+
+            asset.TsetmcInsCode = TsetmcIndices.TotalInsCode;
+            var price = asset.Id == 0 ? null : await db.Prices.FirstOrDefaultAsync(p => p.AssetId == asset.Id && p.Date == date, ct);
+            if (price is null)
+                db.Prices.Add(new Price { Asset = asset, Value = value, Date = date });
+            else
+                price.Value = value;
+
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("TSETMC index sync: total index {Value} for trading day {Date:yyyy-MM-dd}", value, tradingDay);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogError(ex, "TSETMC index sync failed; it is tried again next run");
+        }
     }
 
     /// <summary>
