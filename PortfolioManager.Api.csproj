@@ -6,6 +6,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- chandoo/ is the Chandoo site, a project of its own that calls this API; keep it out of this build. -->
+  <ItemGroup>
+    <Compile Remove="chandoo/**" />
+    <Content Remove="chandoo/**" />
+    <None Remove="chandoo/**" />
+    <EmbeddedResource Remove="chandoo/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>

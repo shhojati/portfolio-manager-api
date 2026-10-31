@@ -26,16 +26,16 @@ limit?" or "why can't I log in?" from it.
 
 | Item | Value |
 |---|---|
-| Application | ASP.NET Core (.NET 10) web API + public price pages + static backoffice UI, single process |
+| Application | ASP.NET Core (.NET 10) web API + static backoffice UI, single process |
 | Database | SQLite file `portfolio.db` |
 | Container port | `8080` (HTTP only; HTTPS is done by the reverse proxy) |
 | Host port | `127.0.0.1:8080` (change with `HOST_PORT`); never exposed publicly |
 | Persistent data in container | `/app/data` (database + data protection keys) |
 | Persistent data on host | `./data` next to `docker-compose.yml` (recommended location: `/opt/portfolio-manager/data`) |
 | Secrets file | `.env` next to `docker-compose.yml` (template: `.env.example`), `chmod 600`, never committed |
-| Public price pages | `https://<DOMAIN>/` (Chandoo; also `/prices/{category}`, `/sources`, `/sitemap.xml`) |
-| Backoffice UI | `https://<DOMAIN>/admin/` (redirects to `/admin/login.html` when not signed in) |
+| Backoffice UI | `https://<DOMAIN>/` (redirects to `/login.html` when not signed in) |
 | API docs | `https://<DOMAIN>/swagger` (if `Swagger__Enabled=true`) |
+| Chandoo site | Separate app in `chandoo/`, deployed on its own (see `chandoo/README.md`); reads `GET /api/board` as an API client. Pushes that only change `chandoo/` don't redeploy the API |
 | Live feed | `wss://<DOMAIN>/ws` (WebSocket) |
 | Timezone | `Asia/Tehran` (set in the image; the sync jobs use Tehran market hours) |
 | Database migrations | Applied automatically on startup |
@@ -133,8 +133,7 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
                         ▼
               Docker container "api" (:8080)
                 ├─ REST API          /api/...
-                ├─ Public pages      /, /prices/..., /sources (Razor Pages, cached 5 min)
-                ├─ Backoffice UI     /admin/ (from wwwroot/admin)
+                ├─ Backoffice UI     /, /login.html (from wwwroot)
                 ├─ WebSocket         /ws
                 └─ Background jobs   TSETMC, Bitpin, tgju, FIPIRAN, IME price sync, and past prices
                                      on demand (outbound HTTPS)
@@ -149,7 +148,7 @@ Internet ──HTTPS──▶ Caddy / nginx (ports 80, 443)
 
 | Who | How they authenticate | What they can do |
 |---|---|---|
-| **Admin** (role `Admin`) | Signs in on `/admin/login.html`; gets an HttpOnly, Secure, SameSite=Strict cookie `pm.session` | Everything: backoffice, all API endpoints including writes, user management |
+| **Admin** (role `Admin`) | Signs in on `/login.html`; gets an HttpOnly, Secure, SameSite=Strict cookie `pm.session` | Everything: backoffice, all API endpoints including writes, user management |
 | **API client** (role `ApiClient`) | `POST /api/auth/token` with username/password → bearer access token (1 h) + refresh token (14 days); `POST /api/auth/refresh` renews | Read-only API access; cannot sign in to the backoffice |
 | **Anonymous** | Nothing | Only `GET /api/assets/search?q=...`, `GET /api/assets/by-identifiers?identifiers=...`, `GET /api/assets/{id}/prices`, `GET /api/prices/latest?identifiers=...` (max 100 identifiers) and `GET /api/prices/history?identifiers=...&from=YYYY-MM-DD&to=YYYY-MM-DD` (each asset's price on every day of the range, fetching past prices not stored yet; max 100 identifiers, 3660 days and 200,000 prices) |
 | **Mobile app install** | Optional `X-Install-Token` header with a token from `POST /api/install` | Same as anonymous. The token is not a sign-in and grants no access; it only gives the install its own rate limit budget (see below) |
@@ -591,7 +590,7 @@ variables are missing or invalid. Fix `.env`, then `docker compose up -d`.
 Local check on the VPS (before the proxy exists):
 
 ```bash
-curl -i http://127.0.0.1:8080/              # expect: 200 and the public price page
+curl -i http://127.0.0.1:8080/              # expect: 302 Location: login.html
 curl -s "http://127.0.0.1:8080/api/assets/search?q=btc" | head -c 300
 ```
 
@@ -804,9 +803,9 @@ be copied back the same way (stop VPS app, copy `data/` to the Liara disk).
 Run from your own computer:
 
 ```bash
-# 1. HTTPS works and the public price page answers
-curl -sI https://<DOMAIN>/ | grep -iE "^HTTP|^cache-control"
-# expect: status 200 and cache-control: public, max-age=300
+# 1. HTTPS works and the UI redirects to the login page
+curl -sI https://<DOMAIN>/ | grep -iE "^HTTP|^location"
+# expect: status 302 (HTTP/1.1 or HTTP/2) and location: login.html
 
 # 2. Public endpoints work anonymously
 curl -s "https://<DOMAIN>/api/assets/search?q=btc" | head -c 200

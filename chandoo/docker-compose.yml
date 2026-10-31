@@ -1,0 +1,20 @@
+# Runs the Chandoo site with Docker, from this folder:
+#   cp .env.example .env    # then fill in the API client's password and your links
+#   chmod 600 .env
+#   docker compose up -d --build
+#
+# Put a reverse proxy with HTTPS (Caddy, nginx) in front. The port is bound to localhost and must not be exposed to the
+# internet directly: the site trusts the proxy's X-Forwarded-* headers.
+
+name: chandoo
+
+services:
+  site:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chandoo:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8081}:8080"

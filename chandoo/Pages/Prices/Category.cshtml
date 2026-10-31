@@ -1,0 +1,58 @@
+@page "/prices/{slug}"
+@model Chandoo.Pages.Prices.CategoryModel
+@{
+    var category = Model.Prices.Category;
+}
+
+<nav class="crumbs" aria-label="مسیر"><a href="/">@PublicSite.Name</a> / <span>@category.Heading</span></nav>
+
+<section class="hero">
+  <h1>@category.Heading</h1>
+  <p class="muted">@category.Description
+    @if (Model.Prices.LastUpdated is { } updated)
+    {
+      <span>آخرین به‌روزرسانی: @PersianFormat.Date(updated)</span>
+    }
+  </p>
+  <partial name="_SearchBox" model="(string?)null" />
+</section>
+
+<partial name="_CategoryChips" model="category.Slug" />
+
+@if (Model.Prices.Rows.Count == 0)
+{
+  <p class="empty">هنوز قیمتی برای این دسته ثبت نشده است.</p>
+}
+else
+{
+  <section class="section">
+    <partial name="_PriceTable" model="new PriceTableModel(Model.Prices.Rows, category.IsPrice)" />
+  </section>
+}
+
+@if (Model.Prices.PageCount > 1)
+{
+  var current = Model.Prices.Page;
+  string Link(int p) => p > 1 ? $"{category.Path}?page={p}" : category.Path;
+  <nav class="pager" aria-label="صفحه‌ها">
+    @if (current > 1)
+    {
+      <a href="@Link(current - 1)" rel="prev">→ قبلی</a>
+    }
+    @for (var p = 1; p <= Model.Prices.PageCount; p++)
+    {
+      if (p == current)
+      {
+        <span aria-current="page">@PersianFormat.Digits(p)</span>
+      }
+      else
+      {
+        <a href="@Link(p)">@PersianFormat.Digits(p)</a>
+      }
+    }
+    @if (current < Model.Prices.PageCount)
+    {
+      <a href="@Link(current + 1)" rel="next">بعدی ←</a>
+    }
+  </nav>
+}

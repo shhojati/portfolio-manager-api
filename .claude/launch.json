@@ -6,6 +6,12 @@
       "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--no-build", "--launch-profile", "http"],
       "port": 5131
+    },
+    {
+      "name": "chandoo",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--no-build", "--project", "chandoo", "--launch-profile", "http"],
+      "port": 5132
     }
   ]
 }

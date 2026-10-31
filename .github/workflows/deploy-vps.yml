@@ -3,6 +3,8 @@ name: Deploy to VPS
 on:
   push:
     branches: [master]
+    # The Chandoo site (chandoo/) is deployed separately; changing only it doesn't redeploy the API.
+    paths-ignore: ['chandoo/**']
   workflow_dispatch:
 
 # One deploy at a time. A newer push waits instead of cancelling: cancelling would cut the SSH session in the
@@ -47,7 +49,7 @@ jobs:
 
           for i in $(seq 1 30); do
             status=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ || true)
-            if [ "$status" = "200" ]; then
+            if [ "$status" = "302" ]; then
               echo "Deployed $1; the app answers."
               docker image prune -f > /dev/null
               exit 0
