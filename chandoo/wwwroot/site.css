@@ -103,13 +103,32 @@ h2 { font-size: 17px; font-weight: 600; margin: 0; }
 
 /* App banner */
 .promo { background: var(--accent-tint); border-bottom: 1px solid var(--border); }
-.promo-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; }
-.promo-text { display: flex; align-items: center; gap: 10px; color: var(--accent); }
-.promo-text strong { display: block; font-size: 14px; font-weight: 600; }
-.promo-text small { display: block; font-size: 12px; }
-.promo-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--accent-fill); }
-.promo-mark svg { width: 20px; height: 20px; fill: none; stroke: var(--on-accent); stroke-width: 2; stroke-linejoin: round; }
-.promo-actions { display: flex; gap: 8px; }
+.promo-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 16px; }
+.promo-text { display: flex; align-items: center; gap: 14px; color: var(--accent); }
+.promo-text strong { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; font-size: 40px; font-weight: 800; line-height: 1.3; }
+.promo-text small { display: block; font-size: 14px; margin-top: 2px; }
+.promo-free {
+  font-size: 16px; font-weight: 700; line-height: 1; padding: 6px 12px; border-radius: 999px;
+  /* The page background as text keeps it readable on the green in both themes. */
+  background: var(--up); color: var(--bg);
+}
+.promo-mark { flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 14px; background: var(--accent-fill); }
+.promo-mark svg { width: 30px; height: 30px; fill: none; stroke: var(--on-accent); stroke-width: 2; stroke-linejoin: round; }
+/* The two buttons stacked, the same width, beside the title. */
+.promo-actions { display: flex; flex-direction: column; gap: 8px; flex: none; }
+.promo-actions .btn, .footer-actions .btn { gap: 8px; height: 40px; padding: 0 16px; font-size: 14px; }
+.btn-icon { flex: none; width: 20px; height: 20px; fill: currentColor; }
+.btn-icon-pwa { width: 30px; }
+
+/* Wide screens have room beside the buttons for a much bigger title. */
+@media (min-width: 1000px) {
+  .promo-inner { padding-block: 20px; }
+  .promo-text strong { font-size: 77px; line-height: 1.15; }
+  .promo-text small { font-size: 16px; }
+  .promo-free { font-size: 20px; padding: 8px 16px; }
+  .promo-mark { width: 72px; height: 72px; border-radius: 18px; }
+  .promo-mark svg { width: 38px; height: 38px; }
+}
 
 /* Header */
 .site-header { background: var(--surface); border-bottom: 1px solid var(--border); }
@@ -198,15 +217,26 @@ table.prices { width: 100%; border-collapse: collapse; font-size: 14px; }
 .faq details p, .faq > p { margin: 6px 0 0; font-size: 14px; color: var(--text-secondary); }
 .faq > .muted { margin-top: 10px; }
 
-.site-footer { border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
-.footer-inner { display: flex; justify-content: space-between; padding-block: 14px; }
-.footer-inner a { color: var(--text-secondary); }
+.site-footer { background: var(--surface); border-top: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.footer-inner { padding-block: 24px 16px; }
+.footer-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 20px; }
+.footer-brand { display: flex; flex-direction: column; gap: 6px; }
+.footer-nav { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.footer-nav a { color: var(--text-secondary); }
+.footer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.footer-bottom { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--border); }
+.footer-bottom a { color: var(--accent); font-weight: 500; }
 
 /* Phones: drop the less important columns, stack the banner. */
 @media (max-width: 640px) {
   h1 { font-size: 20px; }
-  .promo-inner { flex-direction: column; align-items: stretch; }
-  .promo-actions .btn { flex: 1; }
+  .promo-inner { flex-direction: column; align-items: stretch; padding-block: 14px; }
+  .promo-text strong { font-size: 28px; }
+  .promo-free { font-size: 14px; padding: 5px 10px; }
+  .promo-mark { width: 48px; height: 48px; }
+  .promo-mark svg { width: 26px; height: 26px; }
+  .promo-actions { flex-direction: row; }
+  .promo-actions .btn { flex: 1; padding: 0 10px; }
   .site-nav { gap: 14px; font-size: 13px; }
   .kpis { grid-template-columns: minmax(0, 1fr); }
   .kpi { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -214,4 +244,6 @@ table.prices { width: 100%; border-collapse: collapse; font-size: 14px; }
   .prices .col-trend, .prices .col-date { display: none; }
   .prices th, .prices td { padding: 8px 10px; }
   .search .btn { display: none; }
+  .footer-actions { width: 100%; }
+  .footer-actions .btn { flex: 1; padding: 0 10px; }
 }

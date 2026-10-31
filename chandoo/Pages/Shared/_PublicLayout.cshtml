@@ -28,7 +28,7 @@
   <meta property="og:url" content="@canonical">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="preload" href="/fonts/Vazirmatn.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/site.css">
+  <link rel="stylesheet" href="/site.css" asp-append-version="true">
   @foreach (var data in site.StructuredData)
   {
     <script type="application/ld+json">@Html.Raw(site.StructuredDataJson(data))</script>
@@ -44,19 +44,12 @@
             <svg viewBox="0 0 24 24"><path d="M12 3v9l7.8 4.5A9 9 0 1 1 12 3z"/><path d="M15 3.5A9 9 0 0 1 20.5 12H15z"/></svg>
           </span>
           <span>
-            <strong>اپ مدیریت پرتفوی چندو</strong>
+            <strong>اپ مدیریت دارایی <span class="promo-free">رایگان</span></strong>
             <small>همهٔ دارایی‌هایت، یک‌جا با ارزش روز</small>
           </span>
         </div>
         <div class="promo-actions">
-          @if (!string.IsNullOrWhiteSpace(bazaar))
-          {
-            <a class="btn btn-primary" href="@bazaar" rel="noopener">دانلود از بازار</a>
-          }
-          @if (!string.IsNullOrWhiteSpace(webApp))
-          {
-            <a class="btn btn-outline" href="@webApp" rel="noopener">ورود به نسخهٔ وب</a>
-          }
+          <partial name="_AppButtons" model="site.Landing" />
         </div>
       </div>
     </aside>
@@ -92,8 +85,31 @@
 
   <footer class="site-footer">
     <div class="wrap footer-inner">
-      <span>© @PublicSite.Name @PersianFormat.Digits(new System.Globalization.PersianCalendar().GetYear(DateTime.UtcNow))</span>
-      <span><a href="/sources">منابع قیمت‌ها</a></span>
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a class="logo" href="/">
+            <span class="logo-fa">@PublicSite.Name</span>
+            <span class="logo-en" lang="en">@PublicSite.LatinName</span>
+          </a>
+          <nav class="footer-nav" aria-label="منابع قیمت‌ها">
+            <span>منابع:</span>
+            @foreach (var source in SourcesModel.FooterSources)
+            {
+              <a href="@source.Url" rel="nofollow noopener" target="_blank">@source.Name</a>
+            }
+          </nav>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(bazaar) || !string.IsNullOrWhiteSpace(webApp))
+        {
+          <div class="footer-actions">
+            <partial name="_AppButtons" model="site.Landing" />
+          </div>
+        }
+      </div>
+      <div class="footer-bottom">
+        <span>© @PublicSite.Name @PersianFormat.Digits(new System.Globalization.PersianCalendar().GetYear(DateTime.UtcNow))</span>
+        <span>ساخته شده توسط <a href="https://shahabdev.ir" rel="author">شهاب حجتی</a></span>
+      </div>
     </div>
   </footer>
 </body>

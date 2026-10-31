@@ -26,6 +26,12 @@ public sealed class SourcesModel(IOptions<LandingOptions> landing) : PublicPageM
         new("مرکز آمار ایران", "https://www.amar.org.ir", "شاخص قیمت مصرف‌کننده (تورم)", "ماهانه، پس از انتشار گزارش مرکز آمار"),
     ];
 
+    /// <summary>Each source once, by its short name (without the part in brackets), for the footer.</summary>
+    public static readonly IReadOnlyList<(string Name, string Url)> FooterSources = Sources
+        .DistinctBy(s => s.Url)
+        .Select(s => (s.Name.Split(" (")[0], s.Url))
+        .ToList();
+
     public void OnGet()
     {
         Title = $"منابع قیمت‌ها | {PublicSite.Name}";
