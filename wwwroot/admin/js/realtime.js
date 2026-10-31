@@ -6,7 +6,7 @@ class Realtime extends EventTarget {
   #retry = 0;
 
   connect() {
-    const url = new URL('ws', location.href);
+    const url = new URL('/ws', location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
     this.#setStatus('connecting');

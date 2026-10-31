@@ -1,4 +1,4 @@
-// Thin wrapper over the REST API. The UI is served by the API itself, so paths are same-origin.
+// Thin wrapper over the REST API. The UI is served by the API itself under /admin/, so paths are same-origin from the root.
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -16,7 +16,7 @@ async function request(method, path, body) {
 
   let res;
   try {
-    res = await fetch(path, init);
+    res = await fetch(`/${path}`, init);
   } catch {
     throw new ApiError(0, 'Could not reach the server.');
   }

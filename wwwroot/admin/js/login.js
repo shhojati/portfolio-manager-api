@@ -10,7 +10,7 @@ const next = new URLSearchParams(location.search).get('next') || location.hash;
 const target = next && /^#\/[\w/?=&%.-]*$/.test(next) ? `./${next}` : './';
 
 // Already signed in? Skip the form.
-fetch('api/auth/me', { headers: { Accept: 'application/json' } })
+fetch('/api/auth/me', { headers: { Accept: 'application/json' } })
   .then(res => res.ok ? res.json() : null)
   .then(user => { if (user?.role === 'Admin') location.replace(target); })
   .catch(() => {});
@@ -23,7 +23,7 @@ form.addEventListener('submit', async e => {
   submit.disabled = true;
   submit.textContent = 'Signing in…';
   try {
-    const res = await fetch('api/auth/login', {
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({

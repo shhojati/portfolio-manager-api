@@ -1,0 +1,7 @@
+@model string?
+<form class="search" action="/search" method="get" role="search">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+  <label class="sr-only" for="q">جست‌وجوی نماد یا نام</label>
+  <input id="q" name="q" type="search" value="@Model" placeholder="جست‌وجوی نماد یا نام… مثلاً «فولاد» یا «سکه امامی»" autocomplete="off" required>
+  <button type="submit" class="btn btn-outline">جست‌وجو</button>
+</form>

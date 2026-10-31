@@ -1,0 +1,47 @@
+@model PriceTableModel
+<div class="table-wrap">
+  <table class="prices">
+    <thead>
+      <tr>
+        <th scope="col">نام</th>
+        @if (Model.ShowType)
+        {
+          <th scope="col" class="col-type">نوع</th>
+        }
+        <th scope="col" class="num">@(Model.IsPrice ? "قیمت (ریال)" : "مقدار")</th>
+        <th scope="col" class="num">تغییر</th>
+        <th scope="col" class="num col-trend">روند اخیر</th>
+        <th scope="col" class="num col-date">تاریخ</th>
+      </tr>
+    </thead>
+    <tbody>
+      @foreach (var row in Model.Rows)
+      {
+        var direction = row.ChangePercent switch { > 0 => "up", < 0 => "down", _ => "flat" };
+        var trendDirection = row.Trend.Count > 1 && row.Trend[^1] < row.Trend[0] ? "down" : "up";
+        <tr>
+          <th scope="row">
+            <span class="name">@row.Symbol</span>
+            @if (row.Detail != "" || row.Unit is not null)
+            {
+              <span class="detail">@row.Detail@(row.Detail != "" && row.Unit is not null ? " · " : "")@(row.Unit is not null ? $"هر {row.Unit}" : "")</span>
+            }
+          </th>
+          @if (Model.ShowType)
+          {
+            <td class="col-type">@PriceTableModel.TypeName(row.Type)</td>
+          }
+          <td class="num value">@PersianFormat.Value(row.Value)</td>
+          <td class="num change @direction">@(row.ChangePercent is { } change ? PersianFormat.Change(change) : "—")</td>
+          <td class="num col-trend">
+            @if (Sparkline.Points(row.Trend) is { Length: > 0 } points)
+            {
+              <svg class="spark @trendDirection" width="@Sparkline.Width" height="@Sparkline.Height" viewBox="0 0 @Sparkline.Width @Sparkline.Height" aria-hidden="true"><polyline points="@points"/></svg>
+            }
+          </td>
+          <td class="num col-date">@PersianFormat.Date(row.Date)</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

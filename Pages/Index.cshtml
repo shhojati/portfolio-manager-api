@@ -1,0 +1,62 @@
+@page
+@model IndexModel
+
+<section class="hero">
+  <h1>قیمت روز ارز، طلا، سکه، رمزارز و بورس</h1>
+  @if (Model.LastUpdated is { } updated)
+  {
+    <p class="muted">آخرین به‌روزرسانی: @PersianFormat.Date(updated)</p>
+  }
+  <partial name="_SearchBox" model="(string?)null" />
+</section>
+
+@if (Model.Headlines.Count > 0)
+{
+  <section class="kpis" aria-label="قیمت‌های مهم">
+    @foreach (var row in Model.Headlines)
+    {
+      var direction = row.ChangePercent switch { > 0 => "up", < 0 => "down", _ => "flat" };
+      <div class="kpi">
+        <div class="kpi-label">@row.Symbol@(row.Unit is not null ? $" ({row.Unit})" : "")</div>
+        <div class="kpi-value num">@PersianFormat.Value(row.Value)</div>
+        <div class="change @direction">@(row.ChangePercent is { } change ? PersianFormat.Change(change) : "—")</div>
+      </div>
+    }
+  </section>
+}
+
+<partial name="_CategoryChips" model="(string?)null" />
+
+@foreach (var group in Model.Sections.Where(s => s.Rows.Count > 0))
+{
+  <section class="section">
+    <div class="section-head">
+      <h2>@group.Category.Heading</h2>
+      <a href="@group.Category.Path">همهٔ @group.Category.Title ←</a>
+    </div>
+    <partial name="_PriceTable" model="new PriceTableModel(group.Rows, group.Category.IsPrice)" />
+  </section>
+}
+
+<section class="faq">
+  <h2>پرسش‌های پرتکرار</h2>
+  @foreach (var (question, answer) in IndexModel.Faq)
+  {
+    <details>
+      <summary>@question</summary>
+      <p>@answer</p>
+    </details>
+  }
+  <p class="muted"><a href="/sources">منابع قیمت‌ها و زمان به‌روزرسانی هر کدام ←</a></p>
+</section>
+
+@if (Model.ApiDocsUrl is { } docs)
+{
+  <section class="cta">
+    <div>
+      <strong>این داده‌ها را در نرم‌افزار خودتان می‌خواهید؟</strong>
+      <span class="muted">API چندو با قیمت روز و تاریخچه</span>
+    </div>
+    <a class="btn btn-outline" href="@docs">مستندات API</a>
+  </section>
+}

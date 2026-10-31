@@ -47,7 +47,7 @@ jobs:
 
           for i in $(seq 1 30); do
             status=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/ || true)
-            if [ "$status" = "302" ]; then
+            if [ "$status" = "200" ]; then
               echo "Deployed $1; the app answers."
               docker image prune -f > /dev/null
               exit 0

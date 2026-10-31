@@ -19,9 +19,6 @@ public class AssetsController(AppDbContext db) : ControllerBase
     // Caps the work one (possibly anonymous) request can cause.
     private const int MaxIdentifiers = 100;
 
-    // Each search word adds a LIKE over three columns, so only the first few count.
-    private const int MaxSearchWords = 10;
-
     private static readonly TimeZoneInfo Tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
 
     /// <summary>All assets, optionally only one type, or the options and futures on one underlying asset.</summary>
@@ -60,33 +57,11 @@ public class AssetsController(AppDbContext db) : ControllerBase
         if (string.IsNullOrWhiteSpace(q))
             return BadRequest("Search query 'q' is required.");
 
-        // Stored symbols and names use Persian ی/ک, so a query typed with Arabic ي/ك (or pasted from TSETMC) still matches.
-        var term = q.Trim().Replace('ي', 'ی').Replace('ك', 'ک');
-        var prefix = $"{EscapeLike(term)}%";
-        var symbol = term.ToUpperInvariant();
-
-        // Every word has to appear somewhere in the symbol, identifier or name, in any order, so «تضمین مفید» finds
-        // «تضمین اصل سرمایه مفید». Words are also split at a ZWNJ, so «سرمایه‌گذاری» and «سرمایه گذاری» find each other.
-        var words = term.Split([' ', '\t', '\u200c'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct()
-            .Take(MaxSearchWords)
-            .ToList();
-        if (words.Count == 0)
+        var query = AssetSearch.Apply(db.Assets, q);
+        if (query is null)
             return BadRequest("Search query 'q' is required.");
 
-        var query = db.Assets.AsQueryable();
-        foreach (var word in words)
-        {
-            var pattern = $"%{EscapeLike(word)}%";
-            query = query.Where(a => EF.Functions.Like(a.Symbol, pattern, @"\")
-                || EF.Functions.Like(a.Identifier, pattern, @"\")
-                || EF.Functions.Like(a.Name, pattern, @"\"));
-        }
-
         return await query
-            .OrderByDescending(a => a.Symbol == symbol)
-            .ThenByDescending(a => EF.Functions.Like(a.Symbol, prefix, @"\"))
-            .ThenBy(a => a.Symbol)
             .Select(AssetDtoMapping.Projection)
             .Take(50)
             .ToListAsync();
@@ -194,7 +169,4 @@ public class AssetsController(AppDbContext db) : ControllerBase
 
         return NoContent();
     }
-
-    // Escapes LIKE wildcards so user input is matched literally.
-    private static string EscapeLike(string text) => text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 }

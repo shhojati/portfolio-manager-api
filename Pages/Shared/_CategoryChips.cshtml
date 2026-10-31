@@ -1,0 +1,7 @@
+@model string?
+<nav class="chips" aria-label="دسته‌ها">
+  @foreach (var category in PriceCategory.All)
+  {
+    <a class="chip" href="@category.Path" aria-current="@(category.Slug == Model ? "page" : null)">@category.Title</a>
+  }
+</nav>

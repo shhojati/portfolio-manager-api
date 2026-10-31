@@ -1,0 +1,23 @@
+@page "/search"
+@model SearchModel
+
+<section class="hero">
+  <h1>@(string.IsNullOrEmpty(Model.Query) ? "جست‌وجو" : $"نتیجهٔ جست‌وجوی «{Model.Query}»")</h1>
+  <partial name="_SearchBox" model="Model.Query" />
+</section>
+
+@if (!string.IsNullOrEmpty(Model.Query))
+{
+  if (Model.Results.Count == 0)
+  {
+    <p class="empty">دارایی‌ای با این نام یا نماد پیدا نشد. نام دیگری را امتحان کنید.</p>
+  }
+  else
+  {
+    <section class="section">
+      <partial name="_PriceTable" model="new PriceTableModel(Model.Results, ShowType: true)" />
+    </section>
+  }
+}
+
+<partial name="_CategoryChips" model="(string?)null" />

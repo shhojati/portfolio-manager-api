@@ -1,6 +1,9 @@
 using System.Net;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.WebEncoders;
 using Microsoft.OpenApi;
 using PortfolioManager.Api.Auth;
 using PortfolioManager.Api.Bitpin;
@@ -9,6 +12,7 @@ using PortfolioManager.Api.Fipiran;
 using PortfolioManager.Api.History;
 using PortfolioManager.Api.Ime;
 using PortfolioManager.Api.Inflation;
+using PortfolioManager.Api.Public;
 using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tgju;
@@ -17,6 +21,16 @@ using PortfolioManager.Api.Tsetmc;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+// The public price pages (Pages/), server-rendered so search engines can index them, cached for a few minutes.
+builder.Services.AddRazorPages();
+// Write Persian text as is rather than as &#x...; entities, which would triple the size of the pages.
+builder.Services.Configure<WebEncoderOptions>(options => options.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));
+builder.Services.Configure<LandingOptions>(builder.Configuration.GetSection(LandingOptions.SectionName));
+builder.Services.AddScoped<PublicPriceQuery>();
+builder.Services.AddOutputCache(options => options.AddPolicy(PublicSite.CachePolicy, policy => policy
+    .Expire(PublicSite.CacheDuration)
+    .SetVaryByQuery("page")));
 
 // CORS for the web client. Origins come from "Cors:AllowedOrigins"; in Development any localhost origin is also allowed.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -160,19 +174,28 @@ app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();
 
-// The backoffice page itself is only served to signed-in admins; everyone else gets the login page.
+// The backoffice lives under /admin/ (the site root is the public price page). Its page itself is only served to
+// signed-in admins; everyone else gets the login page. "/admin" gets its slash so the page's relative links resolve.
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.Value is "/" or "/index.html" && !context.User.IsInRole(Roles.Admin))
+    switch (context.Request.Path.Value)
     {
-        context.Response.Redirect("login.html");
-        return;
+        case "/admin":
+            context.Response.Redirect("/admin/");
+            return;
+        case "/admin/" or "/admin/index.html" when !context.User.IsInRole(Roles.Admin):
+            context.Response.Redirect("/admin/login.html");
+            return;
+        // Where the login page was before the move, for old bookmarks.
+        case "/login.html":
+            context.Response.Redirect("/admin/login.html");
+            return;
     }
     await next();
 });
 
-// The backoffice UI (wwwroot) is served at the site root. "no-cache" makes browsers revalidate,
-// so a deploy is picked up immediately; unchanged files still come back as 304s.
+// The backoffice UI (wwwroot/admin) and the public pages' assets (wwwroot/public). "no-cache" makes browsers
+// revalidate, so a deploy is picked up immediately; unchanged files still come back as 304s.
 // Static files come before UseAuthorization so the login page and its scripts stay public.
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
@@ -183,8 +206,13 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseInstallTokens();
 app.UseRateLimiter();
 app.UseAuthorization();
+// After authentication: signed-in admins are never served (or cached) a page meant for anonymous visitors.
+app.UseOutputCache();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 app.MapControllers();
+// Everything else needs a signed-in user (the fallback policy in Auth/AuthSetup.cs); the public pages don't.
+app.MapRazorPages().AllowAnonymous();
+app.MapPublicSite();
 
 // Clients connect here to receive "asset.created", "price.created" and "price.updated" messages.
 app.Map("/ws", async (HttpContext context, WebSocketHub hub) =>
