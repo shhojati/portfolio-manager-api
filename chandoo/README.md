@@ -58,7 +58,18 @@ Set these in `appsettings.json`, or as environment variables (`Api__BaseUrl` etc
 
 6. **Point DNS** for the domain at the server, then submit `https://<domain>/sitemap.xml` in Google Search Console.
 
-To update: copy the new files over and run `docker compose up -d --build` again.
+To update: copy the new files over and run `docker compose up -d --build` again, or let GitHub do it (below).
+
+### Automatic deploys from GitHub
+
+`.github/workflows/deploy-chandoo.yml` deploys the site whenever a push to master changes `chandoo/`. You can also run
+it by hand from the Actions tab. It copies `chandoo/` to `/opt/chandoo` with rsync (never touching `.env`), runs
+`docker compose up -d --build`, and fails if the site doesn't answer 200 within a minute.
+
+Chandoo runs on the same VPS as the API, so the workflow uses the API deploy's repository secrets (`VPS_HOST`,
+`VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`; see `DEPLOYMENT.md`). On the server it needs `/opt/chandoo/.env`
+(steps 1–3 above), `rsync`, and `/opt/chandoo` owned by the `VPS_USER` user. If Chandoo ever moves to another server,
+give the workflow secrets of its own.
 
 Without Docker: `dotnet publish -c Release -o publish`, then run `dotnet publish/Chandoo.dll` with the same settings as
 environment variables and `ASPNETCORE_URLS=http://127.0.0.1:8081`.

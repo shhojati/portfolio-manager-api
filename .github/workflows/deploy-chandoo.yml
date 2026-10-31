@@ -1,0 +1,82 @@
+name: Deploy Chandoo
+
+on:
+  push:
+    branches: [master]
+    # Only when the site itself changes; the API has its own workflow (deploy-vps.yml).
+    paths: ['chandoo/**', '.github/workflows/deploy-chandoo.yml']
+  workflow_dispatch:
+
+# One deploy at a time. A newer push waits instead of cancelling: cancelling would cut the SSH session in the
+# middle of a build on the server.
+concurrency:
+  group: chandoo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Chandoo runs on the same VPS as the API, so this uses the API deploy's SSH secrets (see deploy-vps.yml).
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      # Sends chandoo/ to /opt/chandoo as it is in this commit, so the server needs no access to the repository.
+      # .env (the server's settings and the API client's password) is never sent and never deleted.
+      - name: Copy the site to the server
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+        run: |
+          rsync -az --delete \
+            --exclude '.env' --exclude 'bin/' --exclude 'obj/' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=30" \
+            chandoo/ "$USER@$HOST:/opt/chandoo/"
+
+      # Rebuilds the image and recreates the container on the server, then waits until the site answers.
+      - name: Build and restart
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 \
+            "$USER@$HOST" bash -s -- "$GITHUB_SHA" <<'EOF'
+          set -euo pipefail
+          cd /opt/chandoo
+          if [ ! -f .env ]; then
+            echo "/opt/chandoo/.env is missing: create it from .env.example first (see chandoo/README.md)."
+            exit 1
+          fi
+          docker compose up -d --build
+
+          port=$(grep -E '^HOST_PORT=' .env | cut -d= -f2 | tr -d '[:space:]' || true)
+          port=${port:-8081}
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/" || true)
+            if [ "$status" = "200" ]; then
+              echo "Deployed $1; the site answers."
+              docker image prune -f > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+
+          # 503 means the site runs but can't read prices from the API (address or API client password in .env).
+          # Only error lines are printed: everyone who can read the repository can read job logs.
+          echo "The site did not answer 200 within a minute (last status: $status)."
+          docker compose ps
+          docker compose logs --since 5m site | grep -E -A 3 "fail: |crit: |warn: " || true
+          exit 1
+          EOF
