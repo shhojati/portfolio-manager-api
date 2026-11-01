@@ -102,6 +102,34 @@ namespace PortfolioManager.Api.Data.Migrations
                     b.ToTable("DerivativeContracts");
                 });
 
+            modelBuilder.Entity("PortfolioManager.Api.Models.FeeRate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("BuyPercent")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Class")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("SellPercent")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Class", "EffectiveFrom")
+                        .IsUnique();
+
+                    b.ToTable("FeeRates");
+                });
+
             modelBuilder.Entity("PortfolioManager.Api.Models.FipiranDay", b =>
                 {
                     b.Property<DateOnly>("Date")

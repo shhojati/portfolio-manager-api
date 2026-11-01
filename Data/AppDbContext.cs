@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TsetmcInstrument> TsetmcInstruments => Set<TsetmcInstrument>();
     public DbSet<FipiranDay> FipiranDays => Set<FipiranDay>();
     public DbSet<DerivativeContract> DerivativeContracts => Set<DerivativeContract>();
+    public DbSet<FeeRate> FeeRates => Set<FeeRate>();
 
     /// <summary>
     /// Whether this context's saves are pushed to WebSocket clients (see RealtimeBroadcastInterceptor). Turned off
@@ -90,5 +91,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
 
         modelBuilder.Entity<FipiranDay>(e => e.HasKey(d => d.Date));
+
+        modelBuilder.Entity<FeeRate>(e =>
+        {
+            e.Property(r => r.Class).HasMaxLength(20).IsRequired();
+            e.HasIndex(r => new { r.Class, r.EffectiveFrom }).IsUnique();
+        });
     }
 }

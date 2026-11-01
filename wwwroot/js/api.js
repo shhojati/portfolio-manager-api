@@ -79,3 +79,10 @@ export const users = {
   setPassword: (id, password) => request('PUT', `api/users/${id}/password`, { password }),
   remove: id => request('DELETE', `api/users/${id}`),
 };
+
+export const fees = {
+  list: () => request('GET', 'api/fees'),
+  create: rate => request('POST', 'api/fees', rate),
+  update: (id, rate) => request('PUT', `api/fees/${id}`, rate),
+  remove: id => request('DELETE', `api/fees/${id}`),
+};

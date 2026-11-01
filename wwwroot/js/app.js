@@ -9,6 +9,7 @@ import { loadAssets } from './store.js';
 import { renderActivity } from './views/activity.js';
 import { renderAsset } from './views/asset.js';
 import { renderAssets } from './views/assets.js';
+import { renderFees } from './views/fees.js';
 import { passwordField, renderUsers } from './views/users.js';
 
 const routes = [
@@ -16,6 +17,7 @@ const routes = [
   { pattern: /^\/assets$/, nav: 'assets', render: renderAssets, title: 'Assets' },
   { pattern: /^\/activity$/, nav: 'activity', render: renderActivity, title: 'Live activity' },
   { pattern: /^\/users$/, nav: 'users', render: renderUsers, title: 'Users' },
+  { pattern: /^\/fees$/, nav: 'fees', render: renderFees, title: 'Fees' },
 ];
 
 const main = document.getElementById('view');

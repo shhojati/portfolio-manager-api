@@ -40,6 +40,7 @@ limit?" or "why can't I log in?" from it.
 | Timezone | `Asia/Tehran` (set in the image; the sync jobs use Tehran market hours) |
 | Database migrations | Applied automatically on startup |
 | Users | Created on startup from `Auth__Users__*` variables if they don't exist |
+| Fee rates | Set by admins on the backoffice Fees page; the first ones come with the `AddFeeRates` migration |
 
 Placeholders used in this document:
 
