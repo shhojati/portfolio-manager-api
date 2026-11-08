@@ -10,7 +10,8 @@ Chandoo has no database. It reads everything from the Portfolio Manager API (the
 | Page | What it shows |
 |---|---|
 | `/` | Dollar, 18 karat gold and the TSE index, a short table per main category, FAQ |
-| `/prices/{category}` | Every asset of a category (`currency`, `gold-coin`, `metal`, `crypto`, `fund`, `stock`, `certificate`, `index`), 50 per page |
+| `/prices/{category}` | Every asset of a category (`currency`, `gold-coin`, `metal`, `crypto`, `fund`, `stock`, `certificate`, `commodity-exchange`, `index`), 50 per page |
+| `/prices/commodity-exchange` | Commodity deposit certificates and Salaf prices, with Persian explanatory text; includes only instruments available in Chandoo, not the entire physical commodity market |
 | `/sources` | Where each category's prices come from and how often they're fetched |
 | `/search?q=` | Search results with prices (noindex) |
 | `/robots.txt`, `/sitemap.xml` | For search engines |
