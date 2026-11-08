@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using PortfolioManager.Api.Auth;
+using PortfolioManager.Api.Bale;
 using PortfolioManager.Api.Bitpin;
 using PortfolioManager.Api.Board;
 using PortfolioManager.Api.Data;
@@ -114,6 +115,20 @@ builder.Services.AddHostedService<InflationSyncService>();
 
 // Latest prices with change and trend for price boards (GET /api/board, used by the Chandoo site in chandoo/).
 builder.Services.AddScoped<PriceBoard>();
+
+// Scheduled channel posts use Tehran time. Disable HTTP logging because the URL contains the bot token.
+builder.Services.AddOptions<BaleOptions>()
+    .Bind(builder.Configuration.GetSection(BaleOptions.SectionName))
+    .Validate(o => !o.Enabled || (!string.IsNullOrWhiteSpace(o.BotToken) && !string.IsNullOrWhiteSpace(o.ChannelId)),
+        "Bale:BotToken and Bale:ChannelId are required when publishing is enabled.")
+    .Validate(o => o.IntervalMinutes is >= 1 and <= 10080, "Bale:IntervalMinutes must be between 1 and 10080.")
+    .Validate(o => o.DaysOfWeek.Length > 0 && o.DaysOfWeek.All(d => Enum.IsDefined(d)), "Bale:DaysOfWeek must contain valid days.")
+    .Validate(o => o.AssetIdentifiers.Length > 0 && o.AssetIdentifiers.All(id => !string.IsNullOrWhiteSpace(id)) &&
+        o.AssetIdentifiers.Distinct(StringComparer.OrdinalIgnoreCase).Count() == o.AssetIdentifiers.Length,
+        "Bale:AssetIdentifiers must contain unique, nonempty identifiers.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient<BaleClient>(http => http.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
+builder.Services.AddHostedService<BalePricePublisher>();
 
 // Past prices fetched from the same sources, on demand, when the history endpoint asks for days before what's stored.
 builder.Services.Configure<PriceHistoryOptions>(builder.Configuration.GetSection(PriceHistoryOptions.SectionName));
