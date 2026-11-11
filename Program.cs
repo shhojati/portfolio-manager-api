@@ -15,6 +15,7 @@ using PortfolioManager.Api.RateLimiting;
 using PortfolioManager.Api.Realtime;
 using PortfolioManager.Api.Tgju;
 using PortfolioManager.Api.Tsetmc;
+using PortfolioManager.Api.Telegram;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -129,6 +130,26 @@ builder.Services.AddOptions<BaleOptions>()
     .ValidateOnStart();
 builder.Services.AddHttpClient<BaleClient>(http => http.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
 builder.Services.AddHostedService<BalePricePublisher>();
+
+// Telegram runs on this server: scheduled channel posts plus an authenticated incoming webhook.
+builder.Services.AddOptions<TelegramOptions>()
+    .Bind(builder.Configuration.GetSection(TelegramOptions.SectionName))
+    .Validate(o => !o.Enabled || (!string.IsNullOrWhiteSpace(o.BotToken) && !string.IsNullOrWhiteSpace(o.ChannelId)),
+        "Telegram:BotToken and Telegram:ChannelId are required when enabled.")
+    .Validate(o => !o.Enabled || (o.WebhookSecret.Length is >= 1 and <= 256 &&
+        o.WebhookSecret.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')),
+        "Telegram:WebhookSecret must contain 1-256 ASCII letters, digits, underscores or hyphens.")
+    .Validate(o => o.IntervalMinutes is >= 1 and <= 10080, "Telegram:IntervalMinutes must be between 1 and 10080.")
+    .Validate(o => o.DaysOfWeek.Length > 0 && o.DaysOfWeek.All(d => Enum.IsDefined(d)),
+        "Telegram:DaysOfWeek must contain valid days.")
+    .Validate(o => o.AssetIdentifiers.Length > 0 && o.AssetIdentifiers.All(id => !string.IsNullOrWhiteSpace(id)) &&
+        o.AssetIdentifiers.Distinct(StringComparer.OrdinalIgnoreCase).Count() == o.AssetIdentifiers.Length,
+        "Telegram:AssetIdentifiers must contain unique, nonempty identifiers.")
+    .Validate(o => o.AdminUserIds.All(id => id > 0), "Telegram:AdminUserIds must contain positive user IDs.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient<TelegramClient>(http => http.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
+builder.Services.AddSingleton<TelegramPublisher>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TelegramPublisher>());
 
 // Past prices fetched from the same sources, on demand, when the history endpoint asks for days before what's stored.
 builder.Services.Configure<PriceHistoryOptions>(builder.Configuration.GetSection(PriceHistoryOptions.SectionName));

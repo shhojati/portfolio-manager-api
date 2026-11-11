@@ -8,6 +8,10 @@
 
   <!-- chandoo/ is the Chandoo site, a project of its own that calls this API; keep it out of this build. -->
   <ItemGroup>
+    <Compile Remove="tests/**" />
+    <Content Remove="tests/**" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
     <Compile Remove="chandoo/**" />
     <Content Remove="chandoo/**" />
     <None Remove="chandoo/**" />

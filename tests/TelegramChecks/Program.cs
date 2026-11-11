@@ -1,0 +1,41 @@
+using System.Net;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
+using PortfolioManager.Api.Telegram;
+using PortfolioManager.Api.Controllers;
+using PortfolioManager.Api.Data;
+using PortfolioManager.Api.Models;
+using PortfolioManager.Api.Board;
+void Check(bool pass, string label) { if(!pass) throw new Exception(label); Console.WriteLine("PASS " + label); }
+var settings = new TelegramOptions { Enabled=true, BotToken="fake", ChannelId="@channel", WebhookSecret="secret", AdminUserIds=[42], AssetIdentifiers=["USD"], DaysOfWeek=Enum.GetValues<DayOfWeek>(), StartTime=new(0,0), EndTime=new(0,0), IntervalMinutes=10080 };
+var options = Options.Create(settings);
+using var connection = new SqliteConnection("Data Source=:memory:"); connection.Open();
+var handler = new Recorder();
+var services = new ServiceCollection();
+services.AddDbContext<AppDbContext>(o=>o.UseSqlite(connection)); services.AddScoped<PriceBoard>();
+services.AddSingleton(new TelegramClient(new HttpClient(handler),options));
+using var provider=services.BuildServiceProvider();
+using(var scope=provider.CreateScope()) { var db=scope.ServiceProvider.GetRequiredService<AppDbContext>(); db.Database.EnsureCreated(); db.Assets.Add(new Asset { Identifier="USD",Symbol="Dollar",Name="Dollar",Type="Currency", Prices=[new Price { Value=12345,Date=DateTime.UtcNow.Date }] }); db.SaveChanges(); }
+using var publisher=new TelegramPublisher(provider.GetRequiredService<IServiceScopeFactory>(),options,NullLogger<TelegramPublisher>.Instance);
+var controller=new TelegramController(options,publisher) { ControllerContext=new ControllerContext { HttpContext=new DefaultHttpContext() } };
+var update=new TelegramUpdate(1,new TelegramMessage("/prices",new TelegramUser(42),new TelegramChat(42,"private")));
+Check(await controller.Receive(update) is UnauthorizedResult,"missing secret rejected");
+controller.Request.Headers["X-Telegram-Bot-Api-Secret-Token"]="secret";
+await controller.Receive(update with { Message=update.Message with { From=new TelegramUser(99) } });
+await controller.Receive(update with { Message=update.Message with { Chat=new TelegramChat(42,"group") } });
+await controller.Receive(update with { Message=update.Message with { Text="/unknown" } });
+Check(handler.Count==0,"unauthorized users, groups, unknown commands ignored");
+await Task.WhenAll(controller.Receive(update),controller.Receive(update));
+Check(handler.Count==1,"concurrent duplicate update posts once");
+Check(handler.Body.Contains("12,345") && handler.Body.Contains("@channel"),"database prices sent to configured channel");
+await publisher.PublishAsync(null,default); await publisher.PublishAsync(null,default);
+Check(handler.Count==2,"scheduled interval posts once");
+handler.Fail=true; await controller.Receive(update with {UpdateId=2}); await controller.Receive(update with {UpdateId=2});
+Check(handler.Count==3,"failed send not retried on redelivery");
+settings.Enabled=false; Check(await controller.Receive(update) is NotFoundResult,"disabled webhook returns 404");
+sealed class Recorder:HttpMessageHandler { public int Count; public string Body=""; public bool Fail; protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage req,CancellationToken ct) { Count++; Body=await req.Content.ReadAsStringAsync(ct); return new HttpResponseMessage(Fail?HttpStatusCode.TooManyRequests:HttpStatusCode.OK) { Content=new StringContent(Fail?"{\"ok\":false}":"{\"ok\":true}") }; } }
