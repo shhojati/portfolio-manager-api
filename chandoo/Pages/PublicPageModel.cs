@@ -26,7 +26,7 @@ public abstract class PublicPageModel(IOptions<LandingOptions> landing) : PageMo
     /// <summary>The header link that is highlighted: "prices" or "sources".</summary>
     public string ActiveNav { get; protected set; } = "prices";
 
-    /// <summary>The prices couldn't be read from the API; the layout says so instead of showing the page.</summary>
+    /// <summary>The prices couldn't be read from the API; the layout displays an availability notice.</summary>
     public bool Unavailable { get; private set; }
 
     /// <summary>schema.org objects written as JSON-LD in the page head.</summary>

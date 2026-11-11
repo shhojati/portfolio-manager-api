@@ -10,6 +10,19 @@
   <partial name="_SearchBox" model="(string?)null" />
 </section>
 
+<nav class="markets" aria-labelledby="markets-heading">
+  <h2 id="markets-heading">بازارها</h2>
+  <div class="market-grid">
+    @foreach (var (category, summary) in PriceCategory.Markets)
+    {
+      <a class="market-card" href="@category.Path">
+        <strong>@category.Title</strong>
+        <span>@summary</span>
+      </a>
+    }
+  </div>
+</nav>
+
 @if (Model.Headlines.Count > 0)
 {
   <section class="kpis" aria-label="قیمت‌های مهم">

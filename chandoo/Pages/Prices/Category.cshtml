@@ -32,11 +32,11 @@
   </section>
 }
 
-@if (Model.Prices.Rows.Count == 0)
+@if (!Model.Unavailable && Model.Prices.Rows.Count == 0)
 {
   <p class="empty">هنوز قیمتی برای این دسته ثبت نشده است.</p>
 }
-else
+else if (Model.Prices.Rows.Count > 0)
 {
   <section class="section">
     <partial name="_PriceTable" model="new PriceTableModel(Model.Prices.Rows, category.IsPrice)" />

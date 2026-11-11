@@ -33,8 +33,8 @@ public sealed record PriceCategory(
         new("metal", "فلزات", "قیمت فلزات گران‌بها",
             "قیمت روز نقره، انس طلا، نقره، پلاتین و پالادیوم، به ریال.",
             [AssetTypes.Metal]),
-        new("crypto", "رمزارز", "قیمت رمزارزها",
-            "قیمت روز بیت‌کوین، اتریوم، تتر و دیگر رمزارزها در بازار ایران، به ریال.",
+        new("crypto", "ارز دیجیتال", "قیمت ارز دیجیتال",
+            "قیمت روز ارز دیجیتال در بازار ایران، از جمله بیت‌کوین، اتریوم و تتر، به ریال همراه با تغییر روزانه و روند اخیر رمزارزها.",
             [AssetTypes.Crypto]),
         new("fund", "صندوق‌ها", "قیمت صندوق‌های سرمایه‌گذاری",
             "قیمت روز صندوق‌های قابل معامله در بورس و NAV صندوق‌های صدور و ابطال، به ریال.",
@@ -48,9 +48,23 @@ public sealed record PriceCategory(
         new("commodity-exchange", "بورس کالا", "قیمت‌های بورس کالا",
             "قیمت‌های بورس کالا امروز؛ آخرین قیمت گواهی سپرده کالایی طلا، سکه و نقره و اوراق سلف موجود در چندو، به ریال، همراه با تغییرات روزانه و روند اخیر.",
             [AssetTypes.Certificate, AssetTypes.Salaf], ByName: true),
+        new("stock-exchange", "بورس", "قیمت سهام و صندوق‌های بورس",
+            "آخرین قیمت سهام بورس تهران و فرابورس ایران و صندوق‌های قابل معامله (ETF)، به ریال، همراه با تغییر روزانه و روند اخیر نمادها.",
+            [AssetTypes.Stock, AssetTypes.Etf], ByName: true),
+        new("currency-precious-metals", "ارز و فلزات گرانبها", "قیمت ارز و فلزات گرانبها",
+            "قیمت روز دلار، یورو و سایر ارزهای بازار آزاد، طلای ۱۸ عیار، سکه، نقره، پلاتین و پالادیوم، به ریال.",
+            [AssetTypes.Currency, AssetTypes.Gold, AssetTypes.Coin, AssetTypes.Metal]),
         new("index", "شاخص و تورم", "شاخص کل بورس و تورم",
             "مقدار شاخص کل بورس تهران و شاخص قیمت مصرف‌کننده (تورم).",
             [AssetTypes.Index], ActiveDays: null, IsPrice: false),
+    ];
+
+    public static readonly IReadOnlyList<(PriceCategory Category, string Summary)> Markets =
+    [
+        (Find("commodity-exchange")!, "گواهی سپرده کالایی و اوراق سلف"),
+        (Find("stock-exchange")!, "سهام بورس تهران، فرابورس و صندوق‌های قابل معامله"),
+        (Find("crypto")!, "بیت‌کوین، اتریوم، تتر و سایر رمزارزها"),
+        (Find("currency-precious-metals")!, "دلار، یورو، طلا، سکه و نقره"),
     ];
 
     public static PriceCategory? Find(string slug) =>

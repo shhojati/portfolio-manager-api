@@ -19,7 +19,7 @@
   {
     <link rel="canonical" href="@canonical">
   }
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="@PublicSite.Name">
   <meta property="og:locale" content="fa_IR">
@@ -71,16 +71,9 @@
   <main class="wrap">
     @if (site.Unavailable)
     {
-      IgnoreBody();
-      <section class="hero">
-        <h1>قیمت‌ها موقتاً در دسترس نیستند</h1>
-        <p class="empty">ارتباط با سرور قیمت‌ها برقرار نشد. چند دقیقهٔ دیگر دوباره سر بزنید.</p>
-      </section>
+      <p class="empty" role="status">قیمت‌ها موقتاً در دسترس نیستند. چند دقیقهٔ دیگر دوباره سر بزنید.</p>
     }
-    else
-    {
-      @RenderBody()
-    }
+    @RenderBody()
   </main>
 
   <footer class="site-footer">

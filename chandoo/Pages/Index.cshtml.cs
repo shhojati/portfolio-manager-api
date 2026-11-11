@@ -33,7 +33,7 @@ public sealed class IndexModel(PortfolioApiClient api, IOptions<LandingOptions> 
     public async Task OnGetAsync(CancellationToken ct)
     {
         Title = $"قیمت روز ارز، طلا، سکه، رمزارز و بورس | {PublicSite.Name}";
-        Description = "قیمت روز دلار، یورو، طلای ۱۸ عیار، سکه امامی، بیت‌کوین، سهام بورس تهران و صندوق‌ها به ریال، با تغییر روزانه و روند اخیر.";
+        Description = "قیمت روز بورس کالا، سهام بورس تهران، ارز دیجیتال، ارز و فلزات گرانبها در چندو، همراه با تغییر روزانه و روند اخیر.";
 
         await LoadAsync(async () =>
         {

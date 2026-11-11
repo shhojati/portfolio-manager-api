@@ -6,7 +6,7 @@
   <partial name="_SearchBox" model="Model.Query" />
 </section>
 
-@if (!string.IsNullOrEmpty(Model.Query))
+@if (!Model.Unavailable && !string.IsNullOrEmpty(Model.Query))
 {
   if (Model.Results.Count == 0)
   {
